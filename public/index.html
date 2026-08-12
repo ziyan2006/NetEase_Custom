@@ -175,6 +175,24 @@
       </div>
     </div>
 
+    <!-- 新建歌单 Modal (Create Playlist Modal) -->
+    <div id="create-playlist-modal" class="modal-backdrop">
+      <div class="modal-card" style="text-align: left;">
+        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary);">➕ 新建网易云歌单</h3>
+        <p style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; margin-bottom: 18px;">
+          创建后将自动同步至您的网易云云端账号
+        </p>
+
+        <label class="form-label" for="input-new-playlist-name" style="margin-bottom: 6px; display: block;">歌单名称:</label>
+        <input id="input-new-playlist-name" type="text" placeholder="例: DJ Peak Hour Set" class="input-box" style="margin-bottom: 20px;" />
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button id="btn-cancel-create-playlist" class="btn btn-secondary btn-sm" style="flex: 1;">取消</button>
+          <button id="btn-confirm-create-playlist" class="btn btn-primary btn-sm" style="flex: 1;">确定创建</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 最上层全屏导出/转换阻断进度遮罩 (Top-Most Progress Modal) -->
     <div id="export-progress-modal" class="modal-backdrop top-most-modal">
       <div class="modal-card progress-modal-card">

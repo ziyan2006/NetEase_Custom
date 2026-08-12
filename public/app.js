@@ -312,12 +312,34 @@ async function selectNativeDirectory() {
   }
 }
 
-async function createNewPlaylist() {
-  const name = prompt("请输入要新建的网易云歌单名称：", "DJ Set 2026");
-  if (!name || !name.trim()) return;
+const createPlaylistModal = document.querySelector("#create-playlist-modal");
+const inputNewPlaylistName = document.querySelector("#input-new-playlist-name");
+const btnCancelCreatePlaylist = document.querySelector("#btn-cancel-create-playlist");
+const btnConfirmCreatePlaylist = document.querySelector("#btn-confirm-create-playlist");
+
+function openCreatePlaylistModal() {
+  if (!createPlaylistModal) return;
+  if (inputNewPlaylistName) inputNewPlaylistName.value = "";
+  createPlaylistModal.classList.add("active");
+  setTimeout(() => inputNewPlaylistName?.focus(), 100);
+}
+
+function hideCreatePlaylistModal() {
+  if (!createPlaylistModal) return;
+  createPlaylistModal.classList.remove("active");
+}
+
+async function handleConfirmCreatePlaylist() {
+  const rawName = inputNewPlaylistName ? inputNewPlaylistName.value.trim() : "";
+  if (!rawName) {
+    alert("请输入有效的歌单名称！");
+    return;
+  }
+
+  hideCreatePlaylistModal();
 
   const cookie = localStorage.getItem("netease_cookie") || "";
-  const trimmedName = name.trim();
+  const trimmedName = rawName;
 
   if (cookie) {
     showProgressModal(`➕ 正在新建网易云歌单...`, `正在同步提交至网易云服务器...`);
@@ -387,7 +409,14 @@ async function exportPlaylist(id, name) {
 if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirectory);
 if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
 if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
-if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", createNewPlaylist);
+if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", openCreatePlaylistModal);
+if (btnCancelCreatePlaylist) btnCancelCreatePlaylist.addEventListener("click", hideCreatePlaylistModal);
+if (btnConfirmCreatePlaylist) btnConfirmCreatePlaylist.addEventListener("click", handleConfirmCreatePlaylist);
+if (inputNewPlaylistName) {
+  inputNewPlaylistName.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") handleConfirmCreatePlaylist();
+  });
+}
 if (btnRefreshPlaylists) {
   btnRefreshPlaylists.addEventListener("click", () => {
     const cookie = localStorage.getItem("netease_cookie") || "";
