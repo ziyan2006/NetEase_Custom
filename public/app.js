@@ -170,6 +170,11 @@ function startQrPolling(unikey) {
 }
 
 async function showQrModal() {
+  if (window.electronAPI && typeof window.electronAPI.openNeteaseLogin === "function") {
+    window.electronAPI.openNeteaseLogin();
+    return;
+  }
+
   const modal = document.querySelector("#qr-modal");
   if (!modal) return;
   modal.classList.remove("hidden");
@@ -256,6 +261,15 @@ function handleManualCookieSubmit() {
 }
 
 if (btnSubmitMusicU) btnSubmitMusicU.addEventListener("click", handleManualCookieSubmit);
+
+// 监听 Electron 主进程传来的扫码登录成功 Cookie 并自动加载歌单
+if (window.electronAPI && typeof window.electronAPI.onCookieCaptured === "function") {
+  window.electronAPI.onCookieCaptured((cookieStr) => {
+    localStorage.setItem("netease_cookie", cookieStr);
+    loadUserPlaylists(cookieStr);
+    status.textContent = "网易云扫码授权成功，已为您全自动登录并加载歌单！";
+  });
+}
 
 if (currentCookie) {
   loadUserPlaylists(currentCookie);
