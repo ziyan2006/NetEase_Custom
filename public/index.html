@@ -24,7 +24,11 @@
         <nav class="nav-menu">
           <div class="nav-item active" data-tab="playlists">
             <div class="nav-icon">🎧</div>
-            <span>云端歌单导出</span>
+            <span>云端歌单</span>
+          </div>
+          <div class="nav-item" data-tab="search">
+            <div class="nav-icon">🔍</div>
+            <span>在线搜索歌曲</span>
           </div>
           <div class="nav-item" data-tab="settings">
             <div class="nav-icon">📂</div>
@@ -53,13 +57,13 @@
       </aside>
 
       <!-- 右侧主内容区 Workspace -->
-      <main class="main-workspace">
+      <main class="main-workspace" style="padding-bottom: 110px;">
         <!-- 顶栏 Navbar -->
         <header class="top-header">
           <h1 id="header-page-title" class="page-title">云端歌单导出</h1>
           <div class="top-actions">
             <button id="btn-refresh-playlists" class="btn btn-secondary">
-              <span>🔄 刷新歌单</span>
+              <span>🔄 刷新数据</span>
             </button>
           </div>
         </header>
@@ -85,7 +89,54 @@
           </div>
         </div>
 
-        <!-- 视图 2: 导出路径与配置 -->
+        <!-- 视图 2: 歌曲在线搜索 -->
+        <div id="tab-search" class="view-panel">
+          <div class="card-section">
+            <div class="section-header">
+              <div class="section-title">
+                <span>🔍 网易云曲库在线搜索</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 24px;">
+              <input id="online-search-input" type="text" class="input-box" placeholder="输入歌曲名、歌手名或专辑关键字..." style="flex: 1; height: 42px; font-size: 14px;" />
+              <button id="btn-online-search" class="btn btn-primary" style="padding: 0 24px; height: 42px;">🔍 搜索曲目</button>
+            </div>
+
+            <div id="search-results-container" class="song-table-container">
+              <div style="text-align: center; color: var(--text-muted); padding: 50px;">
+                在上方输入关键字检索网易云千万级曲库
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视图 3: 歌单详情与曲目编辑页 -->
+        <div id="tab-playlist-detail" class="view-panel">
+          <div class="card-section">
+            <div style="display: flex; gap: 24px; align-items: center; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 24px;">
+              <div style="width: 130px; height: 130px; border-radius: var(--radius-md); overflow: hidden; background: #1a1a24; flex-shrink: 0; box-shadow: var(--shadow-card);">
+                <img id="detail-playlist-cover" src="https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg" style="width: 100%; height: 100%; object-fit: cover;" />
+              </div>
+              <div style="flex: 1;">
+                <button id="btn-back-to-playlists" class="btn btn-secondary btn-sm" style="margin-bottom: 10px;">← 返回歌单列表</button>
+                <h2 id="detail-playlist-title" style="font-size: 24px; font-weight: 800; color: var(--text-primary);">歌单加载中...</h2>
+                <p id="detail-playlist-count" style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">共 0 首歌曲</p>
+                <div style="display: flex; gap: 12px; margin-top: 16px;">
+                  <button id="btn-detail-play-all" class="btn btn-primary btn-sm">▶️ 全部播放</button>
+                  <button id="btn-detail-export-pl" class="btn btn-secondary btn-sm">⚡ 一键导出此歌单</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="detail-tracks-container" class="song-table-container">
+              <div style="text-align: center; color: var(--text-muted); padding: 40px;">
+                正在加载歌单曲目列表...
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 视图 4: 导出路径与配置 -->
         <div id="tab-settings" class="view-panel">
           <div class="card-section">
             <div class="section-header">
@@ -106,7 +157,7 @@
           </div>
         </div>
 
-        <!-- 视图 3: 本地音频 / NCM 拖拽转码 -->
+        <!-- 视图 5: 本地音频 / NCM 拖拽转码 -->
         <div id="tab-local" class="view-panel">
           <div class="card-section">
             <div class="section-header">
@@ -153,6 +204,57 @@
       </main>
     </div>
 
+    <!-- 底部全局 YesPlayMusic 浮动音频播放器 (Global Player Bar) -->
+    <div id="global-player-bar" class="global-player-bar">
+      <div class="player-left">
+        <div class="player-cover-box">
+          <img id="player-cover-img" src="https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg" alt="Cover" />
+        </div>
+        <div class="player-song-info">
+          <div id="player-song-title" class="player-title">尚未播放曲目</div>
+          <div id="player-artist-name" class="player-artist">选择试听任意单曲</div>
+        </div>
+      </div>
+
+      <div class="player-center">
+        <div class="player-controls">
+          <button id="btn-player-prev" class="player-btn-icon" title="上一首">⏮</button>
+          <button id="btn-player-toggle" class="player-btn-icon player-btn-main" title="播放/暂停">▶️</button>
+          <button id="btn-player-next" class="player-btn-icon" title="下一首">⏭</button>
+        </div>
+        <div class="player-seek-container">
+          <span id="player-time-current" class="player-time">00:00</span>
+          <input id="player-seek-bar" type="range" class="player-slider" min="0" max="100" value="0" step="0.1" />
+          <span id="player-time-total" class="player-time">00:00</span>
+        </div>
+      </div>
+
+      <div class="player-right">
+        <span style="font-size: 14px;">🔊</span>
+        <input id="player-volume-slider" type="range" class="player-slider" style="width: 80px;" min="0" max="1" value="0.8" step="0.05" />
+      </div>
+
+      <audio id="global-audio-engine" style="display: none;"></audio>
+    </div>
+
+    <!-- 添加歌曲到歌单 Modal -->
+    <div id="add-to-playlist-modal" class="modal-backdrop">
+      <div class="modal-card" style="text-align: left; width: 400px;">
+        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary);">➕ 添加歌曲到我的歌单</h3>
+        <p id="add-modal-song-info" style="font-size: 12px; color: var(--text-secondary); margin-top: 4px; margin-bottom: 16px;">
+          选择要添加的目标歌单
+        </p>
+
+        <div id="modal-user-playlist-list" style="max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px;">
+          <div style="text-align: center; color: var(--text-muted); padding: 20px;">加载歌单列表...</div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end;">
+          <button id="btn-cancel-add-to-playlist" class="btn btn-secondary btn-sm">关闭</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 扫码登录 Modal -->
     <div id="qr-modal" class="modal-backdrop">
       <div class="modal-card">
@@ -160,7 +262,6 @@
         <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
         <p id="qr-status-text" style="font-size: 12px; color: var(--text-secondary);">请打开网易云音乐手机 App 扫描二维码</p>
 
-        <!-- 风控兜底 MUSIC_U 粘贴区 -->
         <div style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 14px; text-align: left;">
           <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
             💡 <b>风控兜底</b>：环境受限时，可直接粘贴网易云 <code>MUSIC_U</code> 凭证：
@@ -175,7 +276,7 @@
       </div>
     </div>
 
-    <!-- 新建歌单 Modal (Create Playlist Modal) -->
+    <!-- 新建歌单 Modal -->
     <div id="create-playlist-modal" class="modal-backdrop">
       <div class="modal-card" style="text-align: left;">
         <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary);">➕ 新建网易云歌单</h3>
@@ -193,7 +294,7 @@
       </div>
     </div>
 
-    <!-- 最上层全屏导出/转换阻断进度遮罩 (Top-Most Progress Modal) -->
+    <!-- 最上层全屏导出/转换阻断进度遮罩 -->
     <div id="export-progress-modal" class="modal-backdrop top-most-modal">
       <div class="modal-card progress-modal-card">
         <div class="progress-spinner">

@@ -1,4 +1,4 @@
-// YesPlayMusic UI Logic & NetEase Exporter Frontend Engine
+// YesPlayMusic Full Desktop Client Frontend Engine
 const form = document.querySelector("#converter-form");
 const statusCard = document.querySelector("#status-card");
 const statusText = document.querySelector("#status-text");
@@ -21,29 +21,34 @@ const viewPanels = document.querySelectorAll(".view-panel");
 const headerPageTitle = document.querySelector("#header-page-title");
 
 const tabTitles = {
-  playlists: "云端歌单导出",
+  playlists: "云端歌单",
+  search: "在线搜索歌曲",
   settings: "导出目录配置",
   local: "本地单文件转码",
+  "playlist-detail": "歌单详情与编辑",
 };
 
-navItems.forEach((item) => {
-  item.addEventListener("click", () => {
-    const targetTab = item.dataset.tab;
-    navItems.forEach((nav) => nav.classList.remove("active"));
-    item.classList.add("active");
+function switchTab(targetTab) {
+  navItems.forEach((nav) => {
+    if (nav.dataset.tab === targetTab) nav.classList.add("active");
+    else nav.classList.remove("active");
+  });
 
-    viewPanels.forEach((panel) => {
-      if (panel.id === `tab-${targetTab}`) {
-        panel.classList.add("active");
-      } else {
-        panel.classList.remove("active");
-      }
-    });
-
-    if (headerPageTitle && tabTitles[targetTab]) {
-      headerPageTitle.textContent = tabTitles[targetTab];
+  viewPanels.forEach((panel) => {
+    if (panel.id === `tab-${targetTab}`) {
+      panel.classList.add("active");
+    } else {
+      panel.classList.remove("active");
     }
   });
+
+  if (headerPageTitle && tabTitles[targetTab]) {
+    headerPageTitle.textContent = tabTitles[targetTab];
+  }
+}
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => switchTab(item.dataset.tab));
 });
 
 // User State Management
@@ -55,10 +60,19 @@ let qrPollTimer = null;
 let currentCookie = localStorage.getItem("netease_cookie") || "";
 
 let mockPlaylists = [
+  { id: "2029323974", name: "Duktor喜欢的音乐", trackCount: 6, coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg" },
   { id: "pl_01", name: "House Peak Hour", trackCount: 38, coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg" },
   { id: "pl_02", name: "Techno Basement", trackCount: 24, coverUrl: "https://p2.music.126.net/L3838_0_L7676==/109951165406022568.jpg" },
-  { id: "pl_03", name: "Pop Remixes 2026", trackCount: 52, coverUrl: "https://p1.music.126.net/8888==/109951165406022569.jpg" },
 ];
+
+function setStatusMessage(msg, isProgress = false, progressPercent = 0) {
+  if (!statusCard || !statusText) return;
+  statusCard.classList.add("active");
+  statusText.textContent = msg;
+  if (progressBarFill) {
+    progressBarFill.style.width = isProgress ? `${progressPercent}%` : "100%";
+  }
+}
 
 // 顶层全屏阻断进度遮罩控制
 const exportProgressModal = document.querySelector("#export-progress-modal");
@@ -85,15 +99,6 @@ function updateProgressModal(percent, subtitle) {
 function hideProgressModal() {
   if (!exportProgressModal) return;
   exportProgressModal.classList.remove("active");
-}
-
-function setStatusMessage(msg, isProgress = false, progressPercent = 0) {
-  if (!statusCard || !statusText) return;
-  statusCard.classList.add("active");
-  statusText.textContent = msg;
-  if (progressBarFill) {
-    progressBarFill.style.width = isProgress ? `${progressPercent}%` : "100%";
-  }
 }
 
 const playlistSearchInput = document.querySelector("#playlist-search-input");
@@ -151,6 +156,12 @@ function renderPlaylists() {
       <div class="playlist-name">${pl.name}</div>
       <div class="playlist-track-count">${pl.trackCount || 0} 首曲目</div>
     `;
+
+    // 点击歌单卡片整体进入歌单详情页
+    card.addEventListener("click", () => {
+      openPlaylistDetail(pl.id, pl.name, cover);
+    });
+
     playlistContainer.appendChild(card);
   });
 
@@ -303,7 +314,7 @@ function startQrPolling(unikey) {
         clearInterval(qrPollTimer);
       }
     } catch (e) {
-      // ignore poll error
+      // ignore
     }
   }, 2000);
 }
@@ -449,6 +460,404 @@ async function exportPlaylist(id, name) {
   }
 }
 
+// 🎵 1. 全局音乐播放器引擎 (Global Audio Player Engine)
+const audioEngine = document.querySelector("#global-audio-engine");
+const playerCoverImg = document.querySelector("#player-cover-img");
+const playerSongTitle = document.querySelector("#player-song-title");
+const playerArtistName = document.querySelector("#player-artist-name");
+const btnPlayerToggle = document.querySelector("#btn-player-toggle");
+const btnPlayerPrev = document.querySelector("#btn-player-prev");
+const btnPlayerNext = document.querySelector("#btn-player-next");
+const playerSeekBar = document.querySelector("#player-seek-bar");
+const playerTimeCurrent = document.querySelector("#player-time-current");
+const playerTimeTotal = document.querySelector("#player-time-total");
+const playerVolumeSlider = document.querySelector("#player-volume-slider");
+
+let playerQueue = [];
+let currentTrackIndex = -1;
+let isAudioPlaying = false;
+
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return "00:00";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m < 10 ? "0" + m : m}:${s < 10 ? "0" + s : s}`;
+}
+
+async function playTrack(song) {
+  if (!song || !song.id) return;
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  
+  if (playerSongTitle) playerSongTitle.textContent = song.name || "未知曲目";
+  if (playerArtistName) playerArtistName.textContent = song.artist || "未知歌手";
+  if (playerCoverImg && song.cover) playerCoverImg.src = song.cover;
+
+  setStatusMessage(`正在加载音轨: ${song.artist} - ${song.name}...`, true, 50);
+
+  try {
+    const res = await fetch(`/api/song/url?id=${song.id}&cookie=${encodeURIComponent(cookie)}`);
+    const data = await res.json();
+    const streamUrl = data.data?.[0]?.url;
+
+    if (!streamUrl) {
+      alert(`无法提取《${song.name}》播放音频，该曲目可能为网易云受限或 VIP 会员专属。`);
+      return;
+    }
+
+    if (audioEngine) {
+      audioEngine.src = streamUrl;
+      await audioEngine.play();
+      isAudioPlaying = true;
+      if (btnPlayerToggle) btnPlayerToggle.textContent = "⏸️";
+      setStatusMessage(`正在播放: ${song.artist} - ${song.name}`);
+    }
+  } catch (err) {
+    alert("播放音频发生异常: " + err.message);
+  }
+}
+
+if (audioEngine) {
+  audioEngine.addEventListener("timeupdate", () => {
+    if (!audioEngine.duration) return;
+    const current = audioEngine.currentTime;
+    const total = audioEngine.duration;
+    if (playerSeekBar) playerSeekBar.value = (current / total) * 100;
+    if (playerTimeCurrent) playerTimeCurrent.textContent = formatDuration(current);
+    if (playerTimeTotal) playerTimeTotal.textContent = formatDuration(total);
+  });
+
+  audioEngine.addEventListener("ended", () => {
+    if (currentTrackIndex >= 0 && currentTrackIndex < playerQueue.length - 1) {
+      currentTrackIndex++;
+      playTrack(playerQueue[currentTrackIndex]);
+    } else {
+      isAudioPlaying = false;
+      if (btnPlayerToggle) btnPlayerToggle.textContent = "▶️";
+    }
+  });
+}
+
+if (btnPlayerToggle) {
+  btnPlayerToggle.addEventListener("click", () => {
+    if (!audioEngine || !audioEngine.src) return;
+    if (isAudioPlaying) {
+      audioEngine.pause();
+      isAudioPlaying = false;
+      btnPlayerToggle.textContent = "▶️";
+    } else {
+      audioEngine.play();
+      isAudioPlaying = true;
+      btnPlayerToggle.textContent = "⏸️";
+    }
+  });
+}
+
+if (btnPlayerPrev) {
+  btnPlayerPrev.addEventListener("click", () => {
+    if (currentTrackIndex > 0) {
+      currentTrackIndex--;
+      playTrack(playerQueue[currentTrackIndex]);
+    }
+  });
+}
+
+if (btnPlayerNext) {
+  btnPlayerNext.addEventListener("click", () => {
+    if (currentTrackIndex < playerQueue.length - 1) {
+      currentTrackIndex++;
+      playTrack(playerQueue[currentTrackIndex]);
+    }
+  });
+}
+
+if (playerSeekBar) {
+  playerSeekBar.addEventListener("input", () => {
+    if (audioEngine && audioEngine.duration) {
+      audioEngine.currentTime = (playerSeekBar.value / 100) * audioEngine.duration;
+    }
+  });
+}
+
+if (playerVolumeSlider) {
+  playerVolumeSlider.addEventListener("input", () => {
+    if (audioEngine) audioEngine.volume = parseFloat(playerVolumeSlider.value);
+  });
+}
+
+// 🔍 2. 歌曲在线检索模块 (Online Search Module)
+const onlineSearchInput = document.querySelector("#online-search-input");
+const btnOnlineSearch = document.querySelector("#btn-online-search");
+const searchResultsContainer = document.querySelector("#search-results-container");
+
+async function performOnlineSearch() {
+  const query = onlineSearchInput ? onlineSearchInput.value.trim() : "";
+  if (!query) {
+    alert("请输入搜索关键词！");
+    return;
+  }
+
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  if (searchResultsContainer) {
+    searchResultsContainer.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 50px;">🔍 正在检索网易云曲库...</div>`;
+  }
+
+  try {
+    const res = await fetch(`/api/song/search?keywords=${encodeURIComponent(query)}&cookie=${encodeURIComponent(cookie)}`);
+    const data = await res.json();
+    const songs = data.result?.songs || [];
+
+    if (songs.length === 0) {
+      searchResultsContainer.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 50px;">未找到与「${query}」相关的歌曲</div>`;
+      return;
+    }
+
+    renderSongTable(searchResultsContainer, songs, "search");
+  } catch (err) {
+    searchResultsContainer.innerHTML = `<div style="text-align: center; color: #f87171; padding: 50px;">搜索发生异常: ${err.message}</div>`;
+  }
+}
+
+if (btnOnlineSearch) btnOnlineSearch.addEventListener("click", performOnlineSearch);
+if (onlineSearchInput) {
+  onlineSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") performOnlineSearch();
+  });
+}
+
+// 渲染歌曲列表通用表格 (Song Table Renderer)
+function renderSongTable(container, songs, mode = "search", currentPlaylistId = null) {
+  if (!container) return;
+  container.innerHTML = "";
+
+  const table = document.createElement("table");
+  table.className = "song-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th style="width: 50px;">#</th>
+        <th>歌曲标题</th>
+        <th>歌手</th>
+        <th>专辑</th>
+        <th style="width: 80px;">时长</th>
+        <th style="width: 140px; text-align: right;">操作</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+
+  const tbody = table.querySelector("tbody");
+
+  songs.forEach((s, idx) => {
+    const artist = s.ar?.map(a => a.name).join(", ") || s.artists?.map(a => a.name).join(", ") || "Unknown";
+    const album = s.al?.name || s.album?.name || "Single";
+    const cover = s.al?.picUrl || s.album?.artist?.img1v1Url || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+    const duration = formatDuration((s.dt || s.duration || 0) / 1000);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${idx + 1}</td>
+      <td>
+        <div class="song-cell-title">
+          <div class="song-cell-cover"><img src="${cover}" alt="cover" /></div>
+          <div>${s.name}</div>
+        </div>
+      </td>
+      <td>${artist}</td>
+      <td>${album}</td>
+      <td>${duration}</td>
+      <td>
+        <div class="song-action-btns" style="justify-content: flex-end;">
+          <button class="btn-icon-circle btn-play-song" title="▶️ 试听曲目">▶️</button>
+          <button class="btn-icon-circle btn-add-song" title="➕ 添加到歌单">➕</button>
+          ${mode === "detail" ? `<button class="btn-icon-circle btn-icon-danger btn-remove-song" title="🗑️ 从歌单移除">🗑️</button>` : ""}
+        </div>
+      </td>
+    `;
+
+    // 绑定试听
+    tr.querySelector(".btn-play-song").addEventListener("click", () => {
+      playerQueue = songs.map(track => ({
+        id: track.id,
+        name: track.name,
+        artist: track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown",
+        cover: track.al?.picUrl || track.album?.artist?.img1v1Url || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg"
+      }));
+      currentTrackIndex = idx;
+      playTrack(playerQueue[currentTrackIndex]);
+    });
+
+    // 绑定加歌单
+    tr.querySelector(".btn-add-song").addEventListener("click", () => {
+      openAddToPlaylistModal(s.id, s.name);
+    });
+
+    // 绑定歌单移除单曲
+    if (mode === "detail" && currentPlaylistId) {
+      tr.querySelector(".btn-remove-song").addEventListener("click", () => {
+        removeTrackFromPlaylist(currentPlaylistId, s.id, s.name);
+      });
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  container.appendChild(table);
+}
+
+// 🎧 3. 歌单详情与曲目编辑 (Playlist Detail Workspace)
+let activeDetailPlaylistId = null;
+
+async function openPlaylistDetail(playlistId, playlistName, coverUrl) {
+  activeDetailPlaylistId = playlistId;
+  switchTab("playlist-detail");
+
+  const detailCover = document.querySelector("#detail-playlist-cover");
+  const detailTitle = document.querySelector("#detail-playlist-title");
+  const detailCount = document.querySelector("#detail-playlist-count");
+  const detailTracksContainer = document.querySelector("#detail-tracks-container");
+
+  if (detailCover) detailCover.src = coverUrl;
+  if (detailTitle) detailTitle.textContent = playlistName;
+  if (detailCount) detailCount.textContent = "正在向网易云加载曲目列表...";
+
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  try {
+    const res = await fetch(`/api/playlist/detail?id=${playlistId}&cookie=${encodeURIComponent(cookie)}`);
+    const data = await res.json();
+    const tracks = data.playlist?.tracks || [];
+
+    if (detailCount) detailCount.textContent = `共 ${tracks.length} 首曲目`;
+    renderSongTable(detailTracksContainer, tracks, "detail", playlistId);
+  } catch (err) {
+    if (detailTracksContainer) {
+      detailTracksContainer.innerHTML = `<div style="text-align: center; color: #f87171; padding: 40px;">加载歌单曲目失败: ${err.message}</div>`;
+    }
+  }
+}
+
+const btnBackToPlaylists = document.querySelector("#btn-back-to-playlists");
+const btnDetailPlayAll = document.querySelector("#btn-detail-play-all");
+const btnDetailExportPl = document.querySelector("#btn-detail-export-pl");
+
+if (btnBackToPlaylists) {
+  btnBackToPlaylists.addEventListener("click", () => switchTab("playlists"));
+}
+
+if (btnDetailExportPl) {
+  btnDetailExportPl.addEventListener("click", () => {
+    const detailTitle = document.querySelector("#detail-playlist-title");
+    if (activeDetailPlaylistId && detailTitle) {
+      exportPlaylist(activeDetailPlaylistId, detailTitle.textContent);
+    }
+  });
+}
+
+// 移除歌单单曲
+async function removeTrackFromPlaylist(playlistId, songId, songName) {
+  if (!confirm(`确定要将《${songName}》从当前歌单中移除吗？`)) return;
+  const cookie = localStorage.getItem("netease_cookie") || "";
+
+  showProgressModal(`🗑️ 正在从歌单移除...`, `《${songName}》`);
+  try {
+    const res = await fetch("/api/playlist/tracks/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "del", pid: playlistId, trackIds: [songId], cookie })
+    });
+    const data = await res.json();
+    if (data.code === 200) {
+      updateProgressModal(100, "从歌单移除单曲成功！");
+      setStatusMessage(`已将《${songName}》从歌单移除！`);
+      const detailTitle = document.querySelector("#detail-playlist-title");
+      openPlaylistDetail(playlistId, detailTitle?.textContent || "", "");
+    } else {
+      alert("移除失败: " + (data.message || data.msg || "服务器拒绝"));
+    }
+  } catch (err) {
+    alert("移除单曲失败: " + err.message);
+  } finally {
+    setTimeout(hideProgressModal, 800);
+  }
+}
+
+// ➕ 4. 添加歌曲到歌单 Modal (Add to Playlist Modal)
+const addToPlaylistModal = document.querySelector("#add-to-playlist-modal");
+const addModalSongInfo = document.querySelector("#add-modal-song-info");
+const modalUserPlaylistList = document.querySelector("#modal-user-playlist-list");
+const btnCancelAddToPlaylist = document.querySelector("#btn-cancel-add-to-playlist");
+
+let pendingAddSongId = null;
+
+function openAddToPlaylistModal(songId, songName) {
+  pendingAddSongId = songId;
+  if (!addToPlaylistModal) return;
+  if (addModalSongInfo) addModalSongInfo.textContent = `将《${songName}》添加至以下歌单:`;
+  addToPlaylistModal.classList.add("active");
+
+  if (!modalUserPlaylistList) return;
+  modalUserPlaylistList.innerHTML = "";
+
+  if (mockPlaylists.length === 0) {
+    modalUserPlaylistList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 20px;">暂无可用歌单</div>`;
+    return;
+  }
+
+  mockPlaylists.forEach((pl) => {
+    const item = document.createElement("div");
+    item.className = "add-playlist-select-item";
+    const cover = pl.coverUrl || pl.coverImgUrl || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+
+    item.innerHTML = `
+      <div style="width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0;">
+        <img src="${cover}" style="width:100%; height:100%; object-fit: cover;" />
+      </div>
+      <div style="flex: 1; overflow: hidden;">
+        <div style="font-size: 13px; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${pl.name}</div>
+        <div style="font-size: 11px; color: var(--text-muted);">${pl.trackCount || 0} 首曲目</div>
+      </div>
+      <button class="btn btn-primary btn-sm" style="padding: 4px 10px; font-size: 11px;">+ 添加</button>
+    `;
+
+    item.addEventListener("click", () => {
+      addTrackToTargetPlaylist(pl.id, pl.name, songId);
+    });
+
+    modalUserPlaylistList.appendChild(item);
+  });
+}
+
+function hideAddToPlaylistModal() {
+  if (addToPlaylistModal) addToPlaylistModal.classList.remove("active");
+}
+
+if (btnCancelAddToPlaylist) btnCancelAddToPlaylist.addEventListener("click", hideAddToPlaylistModal);
+
+async function addTrackToTargetPlaylist(playlistId, playlistName, songId) {
+  hideAddToPlaylistModal();
+  const cookie = localStorage.getItem("netease_cookie") || "";
+
+  showProgressModal(`➕ 正在添加至歌单...`, `目标: ${playlistName}`);
+  try {
+    const res = await fetch("/api/playlist/tracks/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: "add", pid: playlistId, trackIds: [songId], cookie })
+    });
+    const data = await res.json();
+    if (data.code === 200) {
+      updateProgressModal(100, `成功添加至「${playlistName}」！`);
+      setStatusMessage(`已成功将歌曲添加至网易云歌单「${playlistName}」！`);
+      loadUserPlaylists(cookie);
+    } else {
+      alert("添加失败: " + (data.message || data.msg || "服务器拒绝"));
+    }
+  } catch (err) {
+    alert("添加单曲失败: " + err.message);
+  } finally {
+    setTimeout(hideProgressModal, 800);
+  }
+}
+
 if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirectory);
 if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
 if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
@@ -460,6 +869,7 @@ if (inputNewPlaylistName) {
     if (e.key === "Enter") handleConfirmCreatePlaylist();
   });
 }
+
 if (btnRefreshPlaylists) {
   btnRefreshPlaylists.addEventListener("click", () => {
     const cookie = localStorage.getItem("netease_cookie") || "";
@@ -578,6 +988,7 @@ form.addEventListener("submit", async (event) => {
       throw new Error(body.message ?? "转换失败。");
     }
 
+    updateProgressModal(100, `转换完成，下载已开始！`);
     const link = document.createElement("a");
     link.href = URL.createObjectURL(await response.blob());
     const disposition = response.headers.get("content-disposition") ?? "";
@@ -587,8 +998,10 @@ form.addEventListener("submit", async (event) => {
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     setStatusMessage("转换完成，下载已开始。", true, 100);
   } catch (error) {
+    updateProgressModal(100, `处理异常: ${error.message}`);
     setStatusMessage(error.message);
   } finally {
     button.disabled = false;
+    setTimeout(hideProgressModal, 1000);
   }
 });

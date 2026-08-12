@@ -346,6 +346,104 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "GET" && urlObj.pathname === "/api/song/search") {
+      const keywords = urlObj.searchParams.get("keywords") || urlObj.searchParams.get("s") || "";
+      const type = urlObj.searchParams.get("type") || "1";
+      const limit = urlObj.searchParams.get("limit") || "30";
+      const offset = urlObj.searchParams.get("offset") || "0";
+      const cookie = urlObj.searchParams.get("cookie") || "";
+
+      if (!keywords.trim()) {
+        sendJson(response, 400, { message: "搜索关键词不能为空" });
+        return;
+      }
+
+      try {
+        const resData = await fetchNetEaseApi("/cloudsearch/pc", {
+          method: "POST",
+          body: { s: keywords.trim(), type, limit, offset },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "歌曲搜索失败: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && urlObj.pathname === "/api/playlist/detail") {
+      const id = urlObj.searchParams.get("id");
+      const cookie = urlObj.searchParams.get("cookie") || "";
+
+      if (!id) {
+        sendJson(response, 400, { message: "缺少歌单 ID" });
+        return;
+      }
+
+      try {
+        const resData = await fetchNetEaseApi("/v6/playlist/detail", {
+          params: { id, n: 1000, timestamp: Date.now() },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "获取歌单详情失败: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/playlist/tracks/update") {
+      try {
+        const bodyStr = await new Promise((resolve, reject) => {
+          let chunks = [];
+          request.on("data", (chunk) => chunks.push(chunk));
+          request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          request.on("error", reject);
+        });
+        const params = JSON.parse(bodyStr);
+        const { op, pid, trackIds, cookie } = params; // op: 'add' | 'del'
+
+        if (!op || !pid || !trackIds) {
+          sendJson(response, 400, { message: "缺少必要参数: op, pid, trackIds" });
+          return;
+        }
+
+        const idsArrayStr = Array.isArray(trackIds) ? JSON.stringify(trackIds) : trackIds.toString().startsWith("[") ? trackIds : `[${trackIds}]`;
+
+        const resData = await fetchNetEaseApi("/playlist/manipulate/tracks", {
+          method: "POST",
+          body: { op, pid: pid.toString(), trackIds: idsArrayStr },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "歌单歌曲修改异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && urlObj.pathname === "/api/song/url") {
+      const id = urlObj.searchParams.get("id");
+      const cookie = urlObj.searchParams.get("cookie") || "";
+
+      if (!id) {
+        sendJson(response, 400, { message: "缺少歌曲 ID" });
+        return;
+      }
+
+      try {
+        const resData = await fetchNetEaseApi("/song/enhance/player/url/v1", {
+          method: "POST",
+          body: { ids: `[${id}]`, level: "exhigh", encodeType: "flac" },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "获取歌曲播放流失败: " + err.message });
+      }
+      return;
+    }
+
     if (request.method === "POST" && urlObj.pathname === "/api/playlist/export") {
       try {
         const bodyStr = await new Promise((resolveResolve, rejectReject) => {
