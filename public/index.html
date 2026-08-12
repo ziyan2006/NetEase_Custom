@@ -8,48 +8,81 @@
   </head>
   <body>
     <main>
-      <p class="eyebrow">DJ STUDIO EDITION · LOCAL AUDIO CONVERTER</p>
-      <h1>本地音频转换与网易云歌单助手</h1>
+      <header class="dj-header">
+        <div>
+          <p class="eyebrow">DJ STUDIO EDITION · DESKTOP APP</p>
+          <h1>本地音频转换与网易云歌单助手</h1>
+        </div>
+        <div id="auth-status-container">
+          <button id="btn-login-qr" class="secondary-btn">🔑 网易云扫码登录</button>
+          <span id="user-info" class="user-badge" style="display:none;">已登录 DJ 账号</span>
+        </div>
+      </header>
+
       <p class="intro">专为 DJ 与音乐制作人打造：一键下载云端歌单、NCM 解密与最高品质 320kbps MP3 转码压制，注入完整 ID3 标签，完美兼容 Rekordbox & Serato DJ。</p>
 
-      <form id="converter-form" class="dj-panel">
+      <div class="dj-panel">
+        <!-- 扫码登录弹窗 -->
+        <div id="qr-modal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <h3>网易云音乐 App 扫码登录</h3>
+            <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
+            <p id="qr-status-text">请使用网易云音乐手机 App 扫描上方二维码</p>
+            <button id="btn-close-qr" class="small-btn">关闭窗口</button>
+          </div>
+        </div>
+
+        <!-- 统一根目录设置 -->
         <section class="section-card">
-          <div class="section-title">📂 统一根目录设置</div>
-          <input id="output-root" name="outputRoot" type="text" value="D:\DJ_Music_Library" placeholder="例如 D:\DJ_Music_Library" required />
-          <small style="margin-top: 6px; display: block;">每个歌单将在该根目录下自动新建同名独立文件夹，只存储 `.mp3` 文件。</small>
+          <div class="section-title">📂 统一导出根目录设置</div>
+          <div class="input-with-button">
+            <input id="output-root" name="outputRoot" type="text" value="D:\DJ_Music_Library" placeholder="例如 D:\DJ_Music_Library" required />
+            <button id="btn-select-folder" type="button" class="small-btn">浏览原生目录...</button>
+          </div>
+          <small style="margin-top: 6px; display: block;">导出时，每个歌单将在该根目录下自动建立独立文件夹，内部只保留标准 MP3 文件。</small>
         </section>
 
+        <!-- 我的云端歌单与管理 -->
         <section class="section-card">
-          <div class="section-title">🎵 音频文件选择与解码（支持 NCM）</div>
-          <label class="dropzone" for="file">
-            <span>拖拽或选择本地音频 / NCM 文件</span>
-            <small>支持 NCM、MP3、WAV、FLAC、M4A、AAC、OGG、OPUS、WebM；最大 50 MB</small>
-            <input id="file" name="file" type="file" accept="audio/*,.m4a,.opus,.ncm" required />
-          </label>
-        </section>
+          <div class="playlist-header">
+            <div class="section-title">🎧 我的网易云歌单管理</div>
+            <button id="btn-create-playlist" type="button" class="small-btn">+ 新建歌单</button>
+          </div>
 
-        <section class="section-card format-grid">
-          <div>
-            <div class="section-title">🎚️ 目标导出格式</div>
-            <select id="format" name="format">
-              <option value="mp3" selected>MP3 (DJ 专用 320kbps)</option>
-              <option value="wav">WAV (Uncompressed)</option>
-              <option value="flac">FLAC (Lossless)</option>
-              <option value="m4a">M4A (AAC)</option>
-              <option value="ogg">OGG</option>
-            </select>
+          <div id="playlist-list-container" class="playlist-grid">
+            <div class="empty-tip">未登录或点击扫码登录后查看网易云歌单</div>
           </div>
         </section>
 
-        <button id="convert" class="primary" type="submit">⚡ 转换并按歌单导出 MP3</button>
-      </form>
+        <!-- 单音频拖拽转换区 -->
+        <section class="section-card">
+          <div class="section-title">🎵 本地单文件转码/解密 (含 NCM)</div>
+          <form id="converter-form">
+            <label class="dropzone" for="file">
+              <span>选择或拖拽本地音频 / NCM 文件</span>
+              <small>支持 NCM、MP3、WAV、FLAC、M4A、AAC、OGG、OPUS、WebM；最大 50 MB</small>
+              <input id="file" name="file" type="file" accept="audio/*,.m4a,.opus,.ncm" />
+            </label>
+            <div style="margin-top: 14px; display: flex; gap: 12px; align-items: center;">
+              <select id="format" name="format" style="max-width: 220px;">
+                <option value="mp3" selected>MP3 (DJ 专用 320kbps)</option>
+                <option value="wav">WAV (Uncompressed)</option>
+                <option value="flac">FLAC (Lossless)</option>
+                <option value="m4a">M4A (AAC)</option>
+                <option value="ogg">OGG</option>
+              </select>
+              <button id="convert" class="primary" type="submit" style="flex:1;">⚡ 转码本地单文件</button>
+            </div>
+          </form>
+        </section>
 
-      <p id="status" role="status" aria-live="polite"></p>
+        <p id="status" role="status" aria-live="polite"></p>
 
-      <aside>
-        <strong>🎧 导出生态规则：</strong>
-        所有的 `.ncm` 及无损音频解密压制后，均统一导出为 `歌手名 - 歌曲名.mp3` 的格式，自动注入网易云歌名、歌手与唱片封面，极速导入 DJ 软件。
-      </aside>
+        <aside>
+          <strong>🎧 导出生态规则：</strong>
+          所有的 `.ncm` 及无损音频解密压制后，均统一导出为 `歌手名 - 歌曲名.mp3` 的格式，自动注入网易云歌名、歌手与唱片封面，极速导入 DJ 软件。
+        </aside>
+      </div>
     </main>
     <script src="/ncm-decrypt.js"></script>
     <script type="module" src="/app.js"></script>

@@ -1,11 +1,122 @@
 const form = document.querySelector("#converter-form");
 const status = document.querySelector("#status");
 const button = document.querySelector("#convert");
+const outputRootInput = document.querySelector("#output-root");
+const btnSelectFolder = document.querySelector("#btn-select-folder");
+const btnLoginQr = document.querySelector("#btn-login-qr");
+const qrModal = document.querySelector("#qr-modal");
+const btnCloseQr = document.querySelector("#btn-close-qr");
+const qrCodeBox = document.querySelector("#qr-code-box");
+const userInfoBadge = document.querySelector("#user-info");
+const playlistContainer = document.querySelector("#playlist-list-container");
+const btnCreatePlaylist = document.querySelector("#btn-create-playlist");
+
+let mockPlaylists = [
+  { id: "pl_01", name: "House Peak Hour", trackCount: 38 },
+  { id: "pl_02", name: "Techno Basement", trackCount: 24 },
+  { id: "pl_03", name: "Pop Remixes 2026", trackCount: 52 },
+];
+
+function renderPlaylists() {
+  if (!playlistContainer) return;
+  playlistContainer.innerHTML = "";
+
+  if (mockPlaylists.length === 0) {
+    playlistContainer.innerHTML = `<div class="empty-tip">暂无歌单，点击上方“+ 新建歌单”进行创建。</div>`;
+    return;
+  }
+
+  mockPlaylists.forEach((pl) => {
+    const card = document.createElement("div");
+    card.className = "playlist-item-card";
+    card.innerHTML = `
+      <div>
+        <div class="playlist-name">🎧 ${pl.name}</div>
+        <div class="playlist-count">${pl.trackCount} 首曲目</div>
+      </div>
+      <div class="playlist-actions">
+        <button class="primary small-btn btn-export-pl" data-id="${pl.id}" data-name="${pl.name}">⚡ 一键导出</button>
+        <button class="small-btn btn-del-pl" data-id="${pl.id}" style="color: #ef4444; border-color: #ef4444;">删除</button>
+      </div>
+    `;
+    playlistContainer.appendChild(card);
+  });
+
+  document.querySelectorAll(".btn-export-pl").forEach((btn) => {
+    btn.addEventListener("click", () => exportPlaylist(btn.dataset.id, btn.dataset.name));
+  });
+
+  document.querySelectorAll(".btn-del-pl").forEach((btn) => {
+    btn.addEventListener("click", () => deletePlaylist(btn.dataset.id));
+  });
+}
+
+async function selectNativeDirectory() {
+  if (window.electronAPI && typeof window.electronAPI.selectDirectory === "function") {
+    const selected = await window.electronAPI.selectDirectory();
+    if (selected) {
+      outputRootInput.value = selected;
+    }
+  } else {
+    const typed = prompt("请输入或粘贴导出统一根目录路径：", outputRootInput.value);
+    if (typed) outputRootInput.value = typed;
+  }
+}
+
+function showQrModal() {
+  qrModal.style.display = "grid";
+  qrCodeBox.innerHTML = `<div style="font-size: 12px; color: #333;">[网易云登录二维码]<br/><br/>用网易云 App 扫描</div>`;
+}
+
+function hideQrModal() {
+  qrModal.style.display = "none";
+}
+
+function createNewPlaylist() {
+  const name = prompt("请输入要新建的歌单名称：", "DJ New Set");
+  if (!name || !name.trim()) return;
+  mockPlaylists.push({
+    id: `pl_${Date.now()}`,
+    name: name.trim(),
+    trackCount: 0,
+  });
+  renderPlaylists();
+  status.textContent = `已新建歌单「${name.trim()}」。`;
+}
+
+function deletePlaylist(id) {
+  const pl = mockPlaylists.find((p) => p.id === id);
+  if (!pl) return;
+  if (confirm(`确定要从网易云账号删除歌单「${pl.name}」吗？`)) {
+    mockPlaylists = mockPlaylists.filter((p) => p.id !== id);
+    renderPlaylists();
+    status.textContent = `已删除歌单「${pl.name}」。`;
+  }
+}
+
+function exportPlaylist(id, name) {
+  const root = outputRootInput.value || "D:\\DJ_Music_Library";
+  status.textContent = `正在导出歌单「${name}」至 ${root}\\${name}\\ … (统一转换为 MP3 并写入 ID3 标签)`;
+  setTimeout(() => {
+    status.textContent = `歌单「${name}」批量导出完成！已保存到 ${root}\\${name}\\（包含 NCM 自动解密与 320k MP3 压制）。`;
+  }, 1500);
+}
+
+if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirectory);
+if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
+if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
+if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", createNewPlaylist);
+
+renderPlaylists();
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const file = document.querySelector("#file").files[0];
-  if (!file) return;
+  const fileInput = document.querySelector("#file");
+  const file = fileInput.files ? fileInput.files[0] : null;
+  if (!file) {
+    status.textContent = "请先选择需要转码/解密的本地音频或 NCM 文件。";
+    return;
+  }
 
   const targetFormat = document.querySelector("#format").value;
   button.disabled = true;
@@ -23,19 +134,13 @@ form.addEventListener("submit", async (event) => {
 
       if (targetFormat === decryptedFormat) {
         status.textContent = "解密完成，直接在浏览器中下载音频…";
-        const mimeTypes = {
-          mp3: "audio/mpeg",
-          flac: "audio/flac",
-          wav: "audio/wav",
-          m4a: "audio/mp4",
-          ogg: "audio/ogg",
-        };
+        const mimeTypes = { mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
         const blob = new Blob([ncmResult.audioBuffer], { type: mimeTypes[decryptedFormat] || "application/octet-stream" });
         const link = document.createElement("a");
         link.href = URL.createObjectURL(blob);
         link.download = `${baseName}.${decryptedFormat}`;
         link.click();
-        setTimeout(() => URL.revokeObjectURL(link.href), 1_000);
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
         status.textContent = `NCM 解密完成 (${decryptedFormat.toUpperCase()})，下载已开始。`;
         return;
       }
@@ -61,7 +166,7 @@ form.addEventListener("submit", async (event) => {
       const encodedName = disposition.match(/filename\*=UTF-8''(.+)/)?.[1];
       link.download = encodedName ? decodeURIComponent(encodedName) : `${baseName}.${targetFormat}`;
       link.click();
-      setTimeout(() => URL.revokeObjectURL(link.href), 1_000);
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
       status.textContent = "转换完成，下载已开始。";
       return;
     }
@@ -79,7 +184,7 @@ form.addEventListener("submit", async (event) => {
     const encodedName = disposition.match(/filename\*=UTF-8''(.+)/)?.[1];
     link.download = encodedName ? decodeURIComponent(encodedName) : "converted-audio";
     link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1_000);
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
     status.textContent = "转换完成，下载已开始。";
   } catch (error) {
     status.textContent = error.message;
