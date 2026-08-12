@@ -206,8 +206,10 @@ export function createAppServer() {
           body: { type: 1, key },
         });
 
+        console.log(`[QR CHECK] key=${key} checkRes=`, JSON.stringify(checkRes));
         sendJson(response, 200, checkRes || { code: 801, message: "等待扫码" });
       } catch (err) {
+        console.error(`[QR CHECK ERROR] key=${key}`, err);
         sendJson(response, 200, { code: 801, message: "等待扫码", key });
       }
       return;
@@ -215,8 +217,13 @@ export function createAppServer() {
 
     if (request.method === "GET" && urlObj.pathname === "/api/user/playlists") {
       const cookie = urlObj.searchParams.get("cookie") || request.headers["x-cookie"] || "";
+      console.log(`[PLAYLISTS FETCH] cookie received=`, cookie);
       try {
-        const accountRes = await fetchNetEaseApi("/nuser/account/get", { cookie }).catch(() => null);
+        const accountRes = await fetchNetEaseApi("/nuser/account/get", { cookie }).catch((e) => {
+          console.error("[ACCOUNT FETCH ERROR] fetch failed", e);
+          return null;
+        });
+        console.log(`[ACCOUNT FETCH] accountRes=`, JSON.stringify(accountRes));
         const userId = accountRes?.account?.id || accountRes?.profile?.userId;
 
         if (!userId) {
@@ -228,10 +235,12 @@ export function createAppServer() {
           params: { uid: userId, limit: 100, timestamp: Date.now() },
           cookie,
         });
+        console.log(`[PLAYLISTS FETCH] playlistRes status=`, playlistRes?.code, `count=`, playlistRes?.playlist?.length);
 
         const playlists = parsePlaylistResponse(playlistRes);
         sendJson(response, 200, { code: 200, userId, playlists });
       } catch (err) {
+        console.error("[PLAYLISTS FETCH ERROR]", err);
         sendJson(response, 500, { message: "无法获取用户歌单: " + err.message });
       }
       return;
