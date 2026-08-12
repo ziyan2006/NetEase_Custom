@@ -90,8 +90,36 @@ ipcMain.on("netease:open-login", () => {
     `).catch(() => {});
   });
 
+  // 主动轮询 Cookie（双重保险，每秒检测一次 MUSIC_U）
+  const cookiePollInterval = setInterval(async () => {
+    if (!loginWindow) {
+      clearInterval(cookiePollInterval);
+      return;
+    }
+    try {
+      const cookies = await session.defaultSession.cookies.get({
+        name: "MUSIC_U",
+      });
+      if (cookies && cookies.length > 0) {
+        const targetCookie = cookies[0];
+        const cookieStr = `MUSIC_U=${targetCookie.value}`;
+        console.log("[Electron Polling] Captured NetEase login cookie successfully via active polling!");
+        if (mainWindow) {
+          mainWindow.webContents.send("netease:cookie-captured", cookieStr);
+        }
+        clearInterval(cookiePollInterval);
+        if (loginWindow) {
+          loginWindow.close();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, 1000);
+
   loginWindow.on("closed", () => {
     loginWindow = null;
+    clearInterval(cookiePollInterval);
   });
 });
 
@@ -105,6 +133,7 @@ app.whenReady().then(() => {
 
   // 全局拦截并自动监听 MUSIC_U 扫码成功 Cookie 的写入
   session.defaultSession.cookies.on("changed", (event, cookie, cause, removed) => {
+    console.log(`[Cookie Changed] name=${cookie.name} domain=${cookie.domain} removed=${removed} cause=${cause}`);
     if (cookie.domain && cookie.domain.includes("163.com") && cookie.name === "MUSIC_U" && !removed) {
       const cookieStr = `MUSIC_U=${cookie.value}`;
       console.log("[Electron Session] Capturing Netease login cookie successfully!");
