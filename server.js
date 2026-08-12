@@ -1,3 +1,11 @@
+// 彻底清除代理环境变量，确保 Node.js 的 fetch 能够直连网易云 CDN 节点，规避代理导致的 403 拦截
+delete process.env.HTTP_PROXY;
+delete process.env.HTTPS_PROXY;
+delete process.env.http_proxy;
+delete process.env.https_proxy;
+delete process.env.ALL_PROXY;
+delete process.env.all_proxy;
+
 import { createServer as createHttpServer } from "node:http";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
