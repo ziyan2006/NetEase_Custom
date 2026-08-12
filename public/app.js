@@ -63,29 +63,64 @@ async function selectNativeDirectory() {
   }
 }
 
+let qrPollTimer = null;
+
 async function showQrModal() {
   qrModal.style.display = "grid";
-  qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #666;">正在生成二维码...</div>`;
+  qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #666;">正在向网易云服务器申请扫码 Key...</div>`;
+  const statusText = document.querySelector("#qr-status-text");
+  if (statusText) statusText.textContent = "正在获取最新扫码状态...";
+
+  if (qrPollTimer) clearInterval(qrPollTimer);
+
   try {
     const res = await fetch("/api/login/qr/key");
     const data = await res.json();
-    const qrUrl = `https://music.163.com/login?codekey=${data.unikey || "dj_key"}`;
+    const unikey = data.unikey;
+    if (!unikey) throw new Error("无法获取 Key");
+
+    const qrUrl = `https://music.163.com/login?codekey=${unikey}`;
     if (window.QRCodeLib && typeof window.QRCodeLib.generateQrSvg === "function") {
       qrCodeBox.innerHTML = window.QRCodeLib.generateQrSvg(qrUrl, 180);
     } else {
       qrCodeBox.innerHTML = `<img src="${data.qrImg}" alt="二维码" style="width: 100%; height: 100%; object-fit: contain;" />`;
     }
+
+    if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+
+    qrPollTimer = setInterval(async () => {
+      try {
+        const checkRes = await fetch(`/api/login/qr/check?key=${encodeURIComponent(unikey)}`);
+        const checkData = await checkRes.json();
+        if (checkData.code === 800) {
+          if (statusText) statusText.textContent = "二维码已过期，请重新打开弹窗刷新";
+          clearInterval(qrPollTimer);
+        } else if (checkData.code === 801) {
+          if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+        } else if (checkData.code === 802) {
+          if (statusText) statusText.textContent = "已扫描成功！请在手机上点击“确认登录”";
+        } else if (checkData.code === 803) {
+          if (statusText) statusText.textContent = "登录成功！";
+          clearInterval(qrPollTimer);
+          if (userInfoBadge) {
+            userInfoBadge.style.display = "inline-block";
+            userInfoBadge.textContent = "已登录网易云 DJ 账号";
+          }
+          if (btnLoginQr) btnLoginQr.style.display = "none";
+          setTimeout(hideQrModal, 1000);
+        }
+      } catch (e) {
+        // ignore poll errors
+      }
+    }, 2000);
   } catch (err) {
-    const fallbackUrl = "https://music.163.com/login?codekey=dj_local_login";
-    if (window.QRCodeLib) {
-      qrCodeBox.innerHTML = window.QRCodeLib.generateQrSvg(fallbackUrl, 180);
-    } else {
-      qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #ef4444;">二维码生成失败</div>`;
-    }
+    if (statusText) statusText.textContent = "生成二维码出现异常，请稍后重试";
+    qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #ef4444;">获取扫码 Key 异常</div>`;
   }
 }
 
 function hideQrModal() {
+  if (qrPollTimer) clearInterval(qrPollTimer);
   qrModal.style.display = "none";
 }
 

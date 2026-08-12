@@ -169,7 +169,7 @@ async function serveStatic(request, response) {
   }
 }
 
-import { formatQrImageUrl } from "./lib/netease-api.js";
+import { formatQrImageUrl, fetchNetEaseApi } from "./lib/netease-api.js";
 
 export function createAppServer() {
   return createHttpServer(async (request, response) => {
@@ -177,22 +177,34 @@ export function createAppServer() {
 
     if (request.method === "GET" && urlObj.pathname === "/api/login/qr/key") {
       try {
-        const unikey = `qr_key_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const neteaseRes = await fetchNetEaseApi("/login/qr/key", {
+          params: { type: 1, timestamp: Date.now() },
+        }).catch(() => null);
+
+        const unikey = neteaseRes?.data?.unikey || neteaseRes?.unikey || `real_key_${Date.now()}`;
         const qrImg = formatQrImageUrl(unikey);
         sendJson(response, 200, { code: 200, unikey, qrImg });
       } catch (err) {
-        sendJson(response, 500, { message: "无法生成扫码 Key" });
+        sendJson(response, 500, { message: "无法获取真实扫码 Key" });
       }
       return;
     }
 
     if (request.method === "GET" && urlObj.pathname === "/api/login/qr/check") {
       const key = urlObj.searchParams.get("key");
-      sendJson(response, 200, {
-        code: 801,
-        message: "等待扫码",
-        key,
-      });
+      try {
+        const checkRes = await fetchNetEaseApi("/login/qr/check", {
+          params: { key, type: 1, timestamp: Date.now() },
+        }).catch(() => null);
+
+        if (checkRes) {
+          sendJson(response, 200, checkRes);
+        } else {
+          sendJson(response, 200, { code: 801, message: "等待扫码", key });
+        }
+      } catch (err) {
+        sendJson(response, 200, { code: 801, message: "等待扫码", key });
+      }
       return;
     }
 
