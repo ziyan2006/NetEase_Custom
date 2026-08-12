@@ -336,8 +336,13 @@ export function createAppServer() {
           const batchTracks = tracks.slice(i, i + batchSize);
           const ids = batchTracks.map(t => t.id);
           try {
-            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url", {
-              params: { ids: JSON.stringify(ids), br: 320000, timestamp: Date.now() },
+            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url/v1", {
+              method: "POST",
+              body: {
+                ids: `[${ids.join(",")}]`,
+                level: "exhigh",
+                encodeType: "flac",
+              },
               cookie,
             });
             const urlList = playerUrlRes?.data || [];
