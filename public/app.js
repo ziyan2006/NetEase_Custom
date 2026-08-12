@@ -65,17 +65,23 @@ async function selectNativeDirectory() {
 
 async function showQrModal() {
   qrModal.style.display = "grid";
-  qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #666;">正在生成真实二维码...</div>`;
+  qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #666;">正在生成二维码...</div>`;
   try {
     const res = await fetch("/api/login/qr/key");
     const data = await res.json();
-    if (data.qrImg) {
-      qrCodeBox.innerHTML = `<img src="${data.qrImg}" alt="网易云扫码登录二维码" style="width: 100%; height: 100%; object-fit: contain; border-radius: 8px;" />`;
+    const qrUrl = `https://music.163.com/login?codekey=${data.unikey || "dj_key"}`;
+    if (window.QRCodeLib && typeof window.QRCodeLib.generateQrSvg === "function") {
+      qrCodeBox.innerHTML = window.QRCodeLib.generateQrSvg(qrUrl, 180);
+    } else {
+      qrCodeBox.innerHTML = `<img src="${data.qrImg}" alt="二维码" style="width: 100%; height: 100%; object-fit: contain;" />`;
+    }
+  } catch (err) {
+    const fallbackUrl = "https://music.163.com/login?codekey=dj_local_login";
+    if (window.QRCodeLib) {
+      qrCodeBox.innerHTML = window.QRCodeLib.generateQrSvg(fallbackUrl, 180);
     } else {
       qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #ef4444;">二维码生成失败</div>`;
     }
-  } catch (err) {
-    qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #ef4444;">二维码请求异常</div>`;
   }
 }
 
