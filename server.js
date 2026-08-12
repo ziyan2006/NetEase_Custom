@@ -210,6 +210,30 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "GET" && urlObj.pathname === "/api/user/playlists") {
+      const cookie = urlObj.searchParams.get("cookie") || request.headers["x-cookie"] || "";
+      try {
+        const accountRes = await fetchNetEaseApi("/nuser/account/get", { cookie }).catch(() => null);
+        const userId = accountRes?.account?.id || accountRes?.profile?.userId;
+
+        if (!userId) {
+          sendJson(response, 401, { message: "未获取到用户账号 ID，请重新扫码登录。" });
+          return;
+        }
+
+        const playlistRes = await fetchNetEaseApi("/user/playlist", {
+          params: { uid: userId, limit: 100, timestamp: Date.now() },
+          cookie,
+        });
+
+        const playlists = parsePlaylistResponse(playlistRes);
+        sendJson(response, 200, { code: 200, userId, playlists });
+      } catch (err) {
+        sendJson(response, 500, { message: "无法获取用户歌单: " + err.message });
+      }
+      return;
+    }
+
     if (request.method === "POST" && request.url === "/api/convert") {
       void convertUpload(request, response);
       return;

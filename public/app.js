@@ -63,7 +63,31 @@ async function selectNativeDirectory() {
   }
 }
 
-let qrPollTimer = null;
+let currentCookie = localStorage.getItem("netease_cookie") || "";
+
+async function loadUserPlaylists(cookie) {
+  if (!cookie) return;
+  try {
+    status.textContent = "正在向网易云服务器获取您的真实歌单列表…";
+    const res = await fetch(`/api/user/playlists?cookie=${encodeURIComponent(cookie)}`);
+    const data = await res.json();
+    if (data.code === 200 && Array.isArray(data.playlists)) {
+      mockPlaylists = data.playlists;
+      renderPlaylists();
+      if (userInfoBadge) {
+        userInfoBadge.style.display = "inline-block";
+        userInfoBadge.textContent = `已登录网易云账号 (ID: ${data.userId || "DJ"})`;
+      }
+      if (btnLoginQr) btnLoginQr.style.display = "none";
+      status.textContent = `成功获取到 ${data.playlists.length} 个真实网易云歌单！`;
+    } else {
+      status.textContent = data.message || "登录 Cookie 已过期，请重新扫码。";
+      localStorage.removeItem("netease_cookie");
+    }
+  } catch (err) {
+    status.textContent = "获取真实歌单失败：" + err.message;
+  }
+}
 
 async function showQrModal() {
   qrModal.style.display = "grid";
@@ -100,13 +124,11 @@ async function showQrModal() {
         } else if (checkData.code === 802) {
           if (statusText) statusText.textContent = "已扫描成功！请在手机上点击“确认登录”";
         } else if (checkData.code === 803) {
-          if (statusText) statusText.textContent = "登录成功！";
+          if (statusText) statusText.textContent = "授权登录成功！正在加载真实歌单...";
           clearInterval(qrPollTimer);
-          if (userInfoBadge) {
-            userInfoBadge.style.display = "inline-block";
-            userInfoBadge.textContent = "已登录网易云 DJ 账号";
-          }
-          if (btnLoginQr) btnLoginQr.style.display = "none";
+          const userCookie = checkData.cookie || checkData.cookies || `MUSIC_U=${unikey}`;
+          localStorage.setItem("netease_cookie", userCookie);
+          loadUserPlaylists(userCookie);
           setTimeout(hideQrModal, 1000);
         }
       } catch (e) {
@@ -159,7 +181,11 @@ if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
 if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
 if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", createNewPlaylist);
 
-renderPlaylists();
+if (currentCookie) {
+  loadUserPlaylists(currentCookie);
+} else {
+  renderPlaylists();
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
