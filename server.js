@@ -169,8 +169,33 @@ async function serveStatic(request, response) {
   }
 }
 
+import { formatQrImageUrl } from "./lib/netease-api.js";
+
 export function createAppServer() {
-  return createHttpServer((request, response) => {
+  return createHttpServer(async (request, response) => {
+    const urlObj = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
+
+    if (request.method === "GET" && urlObj.pathname === "/api/login/qr/key") {
+      try {
+        const unikey = `qr_key_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const qrImg = formatQrImageUrl(unikey);
+        sendJson(response, 200, { code: 200, unikey, qrImg });
+      } catch (err) {
+        sendJson(response, 500, { message: "无法生成扫码 Key" });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && urlObj.pathname === "/api/login/qr/check") {
+      const key = urlObj.searchParams.get("key");
+      sendJson(response, 200, {
+        code: 801,
+        message: "等待扫码",
+        key,
+      });
+      return;
+    }
+
     if (request.method === "POST" && request.url === "/api/convert") {
       void convertUpload(request, response);
       return;
