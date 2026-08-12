@@ -143,6 +143,9 @@ function renderPlaylists() {
           <div class="export-overlay-btn btn-export-pl" data-id="${pl.id}" data-name="${pl.name}" title="⚡ 导出此歌单">
             ⚡
           </div>
+          <div class="delete-overlay-btn btn-del-pl" data-id="${pl.id}" data-name="${pl.name}" title="🗑️ 删除此歌单">
+            🗑️
+          </div>
         </div>
       </div>
       <div class="playlist-name">${pl.name}</div>
@@ -157,6 +160,46 @@ function renderPlaylists() {
       exportPlaylist(btn.dataset.id, btn.dataset.name);
     });
   });
+
+  document.querySelectorAll(".btn-del-pl").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deletePlaylist(btn.dataset.id, btn.dataset.name);
+    });
+  });
+}
+
+async function deletePlaylist(id, name) {
+  if (!confirm(`确定要从网易云账号彻底删除歌单「${name}」吗？`)) return;
+
+  const cookie = localStorage.getItem("netease_cookie") || "";
+
+  if (cookie) {
+    showProgressModal(`🗑️ 正在删除网易云歌单...`, `正在同步提交至网易云服务器...`);
+    try {
+      const res = await fetch("/api/playlist/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, cookie }),
+      });
+      const data = await res.json();
+      if (data.code === 200) {
+        updateProgressModal(100, `删除网易云歌单「${name}」成功！`);
+        setStatusMessage(`已成功删除网易云歌单「${name}」！`);
+        await loadUserPlaylists(cookie);
+      } else {
+        alert("删除歌单失败: " + (data.message || data.msg || "网易云服务器拒绝"));
+      }
+    } catch (err) {
+      alert("删除歌单发生异常: " + err.message);
+    } finally {
+      setTimeout(hideProgressModal, 800);
+    }
+  } else {
+    mockPlaylists = mockPlaylists.filter((p) => p.id !== id);
+    renderPlaylists();
+    setStatusMessage(`已删除本地临时歌单「${name}」。`);
+  }
 }
 
 function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {

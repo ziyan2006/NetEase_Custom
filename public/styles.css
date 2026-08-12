@@ -409,6 +409,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 12px;
   opacity: 0;
   transition: var(--transition-fast);
 }
@@ -433,6 +434,27 @@ body {
 
 .playlist-card:hover .export-overlay-btn {
   transform: scale(1);
+}
+
+.delete-overlay-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.85);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+  transform: scale(0.85);
+  transition: var(--transition-fast);
+  font-size: 16px;
+}
+
+.delete-overlay-btn:hover {
+  background: #ef4444;
+  transform: scale(1);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.6);
 }
 
 .playlist-name {
