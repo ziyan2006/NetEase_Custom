@@ -65,6 +65,10 @@ ipcMain.on("netease:open-login", () => {
     },
   });
 
+  // 伪装成标准的纯 Chrome 浏览器，剔除 Electron 特征以绕过风控
+  const chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  loginWindow.webContents.setUserAgent(chromeUA);
+
   // 使用网易云官方提供的标准 Web iframe 登录页（原生包含扫码/手机验证码/密码等多种形式）
   loginWindow.loadURL("https://music.163.com/html/web2/page/login.html");
 
