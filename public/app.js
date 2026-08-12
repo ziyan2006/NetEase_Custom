@@ -96,6 +96,16 @@ function setStatusMessage(msg, isProgress = false, progressPercent = 0) {
   }
 }
 
+const playlistSearchInput = document.querySelector("#playlist-search-input");
+let playlistSearchQuery = "";
+
+if (playlistSearchInput) {
+  playlistSearchInput.addEventListener("input", (e) => {
+    playlistSearchQuery = (e.target.value || "").trim().toLowerCase();
+    renderPlaylists();
+  });
+}
+
 function renderPlaylists() {
   if (!playlistContainer) return;
   playlistContainer.innerHTML = "";
@@ -108,7 +118,20 @@ function renderPlaylists() {
     return;
   }
 
-  mockPlaylists.forEach((pl) => {
+  const filtered = mockPlaylists.filter((pl) => {
+    if (!playlistSearchQuery) return true;
+    return (pl.name || "").toLowerCase().includes(playlistSearchQuery);
+  });
+
+  if (filtered.length === 0) {
+    playlistContainer.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">
+        🔍 未找到匹配「<b>${playlistSearchQuery}</b>」的歌单。
+      </div>`;
+    return;
+  }
+
+  filtered.forEach((pl) => {
     const card = document.createElement("div");
     card.className = "playlist-card";
     const cover = pl.coverUrl || pl.coverImgUrl || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";

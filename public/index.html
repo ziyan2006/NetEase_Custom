@@ -71,7 +71,10 @@
               <div class="section-title">
                 <span>🎧 我的网易云歌单</span>
               </div>
-              <button id="btn-create-playlist" class="btn btn-primary btn-sm">+ 新建歌单</button>
+              <div style="display: flex; gap: 10px; align-items: center;">
+                <input id="playlist-search-input" type="text" class="input-box" placeholder="🔍 搜索歌单名称..." style="width: 220px; height: 34px; padding: 4px 12px; font-size: 12px;" />
+                <button id="btn-create-playlist" class="btn btn-primary btn-sm">+ 新建歌单</button>
+              </div>
             </div>
             
             <div id="playlist-list-container" class="playlist-grid">
