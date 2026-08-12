@@ -127,7 +127,7 @@ ipcMain.on("netease:open-login", () => {
 });
 
 app.whenReady().then(() => {
-  const port = Number(process.env.PORT ?? 4173);
+  const port = Number(process.env.PORT ?? 4178);
   server = createAppServer();
   server.listen(port, "127.0.0.1", () => {
     console.log(`本地服务在 http://127.0.0.1:${port} 启动`);

@@ -408,7 +408,7 @@ export function createAppServer() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
-  const port = Number(process.env.PORT ?? 4173);
+  const port = Number(process.env.PORT ?? 4178);
   createAppServer().listen(port, () => {
     console.log(`本地音频转换工具正在 http://127.0.0.1:${port} 运行`);
   });
