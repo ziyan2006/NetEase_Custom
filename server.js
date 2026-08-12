@@ -177,11 +177,15 @@ export function createAppServer() {
 
     if (request.method === "GET" && urlObj.pathname === "/api/login/qr/key") {
       try {
-        const neteaseRes = await fetchNetEaseApi("/login/qr/key", {
+        const neteaseRes = await fetchNetEaseApi("/login/qrcode/unikey", {
           params: { type: 1, timestamp: Date.now() },
-        }).catch(() => null);
+        });
 
-        const unikey = neteaseRes?.data?.unikey || neteaseRes?.unikey || `real_key_${Date.now()}`;
+        const unikey = neteaseRes?.unikey || neteaseRes?.data?.unikey;
+        if (!unikey) {
+          sendJson(response, 500, { message: "未能获取网易云官方 Key" });
+          return;
+        }
         const qrImg = formatQrImageUrl(unikey);
         sendJson(response, 200, { code: 200, unikey, qrImg });
       } catch (err) {
@@ -193,15 +197,13 @@ export function createAppServer() {
     if (request.method === "GET" && urlObj.pathname === "/api/login/qr/check") {
       const key = urlObj.searchParams.get("key");
       try {
-        const checkRes = await fetchNetEaseApi("/login/qr/check", {
-          params: { key, type: 1, timestamp: Date.now() },
-        }).catch(() => null);
+        const checkRes = await fetchNetEaseApi("/login/qrcode/client/login", {
+          method: "POST",
+          params: { type: 1, key, timestamp: Date.now() },
+          body: { type: 1, key },
+        });
 
-        if (checkRes) {
-          sendJson(response, 200, checkRes);
-        } else {
-          sendJson(response, 200, { code: 801, message: "等待扫码", key });
-        }
+        sendJson(response, 200, checkRes || { code: 801, message: "等待扫码" });
       } catch (err) {
         sendJson(response, 200, { code: 801, message: "等待扫码", key });
       }
