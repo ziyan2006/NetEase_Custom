@@ -157,6 +157,11 @@ function startQrPolling(unikey) {
         localStorage.setItem("netease_cookie", userCookie);
         loadUserPlaylists(userCookie);
         setTimeout(hideQrModal, 1000);
+      } else if (checkData.code === 8821) {
+        if (statusText) {
+          statusText.innerHTML = `<span style="color:#f87171; font-weight: bold;">⚠️ 检测到网易云扫码风控限制 (8821)<br/>请在下方框内粘贴浏览器端的 MUSIC_U 直接登录。</span>`;
+        }
+        clearInterval(qrPollTimer);
       }
     } catch (e) {
       // ignore poll errors
@@ -232,6 +237,25 @@ if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirec
 if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
 if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
 if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", createNewPlaylist);
+
+const btnSubmitMusicU = document.querySelector("#btn-submit-music-u");
+const inputMusicU = document.querySelector("#input-music-u");
+
+function handleManualCookieSubmit() {
+  if (!inputMusicU) return;
+  const rawVal = inputMusicU.value.trim();
+  if (!rawVal) {
+    alert("请输入有效的 MUSIC_U 凭据值！");
+    return;
+  }
+  const userCookie = rawVal.includes("MUSIC_U=") ? rawVal : `MUSIC_U=${rawVal}`;
+  localStorage.setItem("netease_cookie", userCookie);
+  loadUserPlaylists(userCookie);
+  hideQrModal();
+  inputMusicU.value = "";
+}
+
+if (btnSubmitMusicU) btnSubmitMusicU.addEventListener("click", handleManualCookieSubmit);
 
 if (currentCookie) {
   loadUserPlaylists(currentCookie);

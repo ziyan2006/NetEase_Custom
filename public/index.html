@@ -25,11 +25,26 @@
       <div class="dj-panel">
         <!-- 扫码登录弹窗 -->
         <div id="qr-modal" class="modal hidden" style="display: none;" onclick="if(event.target === this) window.hideQrModal && window.hideQrModal();">
-          <div class="modal-content">
+          <div class="modal-content" style="width: 340px;">
             <h3>网易云音乐 App 扫码登录</h3>
             <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
             <p id="qr-status-text">请使用网易云音乐手机 App 扫描上方二维码</p>
-            <button id="btn-close-qr" class="small-btn" onclick="window.hideQrModal && window.hideQrModal();">关闭窗口</button>
+            
+            <!-- 风控兜底：手动导入 MUSIC_U -->
+            <div id="manual-cookie-section" style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 14px; text-align: left;">
+              <p style="font-size: 11px; color: #a1a1aa; line-height: 1.5; margin-bottom: 8px;">
+                💡 <b>风控兜底</b>：若扫码提示失效或环境风险，可粘贴网易云浏览器端 <code>MUSIC_U</code> 凭证直接登录：
+              </p>
+              <div style="display: flex; gap: 6px;">
+                <input id="input-music-u" type="password" placeholder="粘贴你的 MUSIC_U 值 (如: 09ab...)" style="padding: 6px 10px; font-size: 11px; flex: 1; border-color: #3f3f46; height: 32px;" />
+                <button id="btn-submit-music-u" class="small-btn primary" style="padding: 0 12px; font-size: 11px; height: 32px;">确定</button>
+              </div>
+              <p style="font-size: 10px; color: #71717a; margin-top: 6px; line-height: 1.4;">
+                获取方法：电脑浏览器登录网易云官网 -> F12 开发人员工具 -> 应用 (Application) -> Cookie -> 复制 MUSIC_U 值。
+              </p>
+            </div>
+
+            <button id="btn-close-qr" class="small-btn" style="margin-top: 14px;" onclick="window.hideQrModal && window.hideQrModal();">关闭窗口</button>
           </div>
         </div>
 
