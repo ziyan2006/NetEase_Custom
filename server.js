@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { basename, extname, join, normalize, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { inspectAudioFile } from "./lib/audio-file.js";
+import { downloadAndExportTrack } from "./lib/audio-exporter.js";
 
 const projectDirectory = fileURLToPath(new URL(".", import.meta.url));
 const publicDirectory = resolve(projectDirectory, "public");
@@ -242,6 +243,106 @@ export function createAppServer() {
       } catch (err) {
         console.error("[PLAYLISTS FETCH ERROR]", err);
         sendJson(response, 500, { message: "无法获取用户歌单: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/playlist/export") {
+      try {
+        const bodyStr = await new Promise((resolveResolve, rejectReject) => {
+          let chunks = [];
+          request.on("data", (chunk) => chunks.push(chunk));
+          request.on("end", () => resolveResolve(Buffer.concat(chunks).toString("utf8")));
+          request.on("error", rejectReject);
+        });
+
+        const params = JSON.parse(bodyStr);
+        const { id, name, outputRoot, cookie } = params;
+
+        if (!id || !name) {
+          sendJson(response, 400, { message: "缺少必要参数: id, name" });
+          return;
+        }
+
+        console.log(`[EXPORT PLAYLIST] Starting export for: ${name} (ID: ${id}) to: ${outputRoot}`);
+
+        // 1. 获取歌单内曲目 ID 与基本信息
+        const playlistRes = await fetchNetEaseApi("/v6/playlist/detail", {
+          params: { id, n: 1000, timestamp: Date.now() },
+          cookie,
+        });
+
+        const tracks = playlistRes?.playlist?.tracks || [];
+        if (tracks.length === 0) {
+          sendJson(response, 200, { code: 200, message: "歌单内无任何歌曲", successCount: 0, failedCount: 0 });
+          return;
+        }
+
+        const successTracks = [];
+        const failedTracks = [];
+
+        // 2. 批量分段查询歌曲下载链接，规避参数长度限制
+        const batchSize = 50;
+        const songUrlsMap = new Map();
+
+        for (let i = 0; i < tracks.length; i += batchSize) {
+          const batchTracks = tracks.slice(i, i + batchSize);
+          const ids = batchTracks.map(t => t.id);
+          try {
+            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url", {
+              params: { ids: JSON.stringify(ids), br: 320000, timestamp: Date.now() },
+              cookie,
+            });
+            const urlList = playerUrlRes?.data || [];
+            urlList.forEach((item) => {
+              if (item.url) {
+                songUrlsMap.set(item.id, item.url);
+              }
+            });
+          } catch (e) {
+            console.error(`获取歌曲 URL 批次失败: `, e);
+          }
+        }
+
+        // 3. 循环下载、解密 NCM 并进行 MP3 转码压制
+        for (const track of tracks) {
+          const downloadUrl = songUrlsMap.get(track.id);
+          const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
+          const title = track.name;
+
+          if (!downloadUrl) {
+            failedTracks.push({ title, artist, reason: "无法获取下载链接 (VIP 限制或独家版权受限)" });
+            continue;
+          }
+
+          try {
+            await downloadAndExportTrack({
+              outputRoot,
+              playlistName: name,
+              artist,
+              title,
+              downloadUrl,
+            });
+            successTracks.push({ title, artist });
+          } catch (err) {
+            console.error(`导出曲目失败: ${artist} - ${title}`, err);
+            failedTracks.push({ title, artist, reason: err.message });
+          }
+        }
+
+        console.log(`[EXPORT PLAYLIST] Done: ${name}. Success: ${successTracks.length}, Failed: ${failedTracks.length}`);
+        sendJson(response, 200, {
+          code: 200,
+          message: "歌单批量导出完成！",
+          successCount: successTracks.length,
+          failedCount: failedTracks.length,
+          successTracks,
+          failedTracks,
+        });
+
+      } catch (err) {
+        console.error("歌单导出异常", err);
+        sendJson(response, 500, { message: "批量导出发生异常: " + err.message });
       }
       return;
     }

@@ -230,12 +230,38 @@ function deletePlaylist(id) {
   }
 }
 
-function exportPlaylist(id, name) {
+async function exportPlaylist(id, name) {
   const root = outputRootInput.value || "D:\\DJ_Music_Library";
-  status.textContent = `正在导出歌单「${name}」至 ${root}\\${name}\\ … (统一转换为 MP3 并写入 ID3 标签)`;
-  setTimeout(() => {
-    status.textContent = `歌单「${name}」批量导出完成！已保存到 ${root}\\${name}\\（包含 NCM 自动解密与 320k MP3 压制）。`;
-  }, 1500);
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  
+  status.textContent = `正在从网易云服务器拉取并导出歌单「${name}」曲目，请稍候… (正在转换落盘)`;
+  
+  try {
+    const res = await fetch("/api/playlist/export", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        id,
+        name,
+        outputRoot: root,
+        cookie
+      })
+    });
+    
+    const data = await res.json();
+    if (res.ok && data.code === 200) {
+      status.textContent = `歌单「${name}」批量导出完成！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。已保存到 ${root}\\${name}\\（全部统一为 320k MP3 格式）。`;
+      if (data.failedTracks && data.failedTracks.length > 0) {
+        console.warn("部分歌曲由于版权或VIP限制未能导出：", data.failedTracks);
+      }
+    } else {
+      status.textContent = `导出失败：${data.message || "未知错误"}`;
+    }
+  } catch (err) {
+    status.textContent = `导出发生异常：${err.message}`;
+  }
 }
 
 if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirectory);
