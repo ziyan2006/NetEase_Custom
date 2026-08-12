@@ -213,9 +213,12 @@ async function deletePlaylist(id, name) {
   }
 }
 
+const btnHeaderLogin = document.querySelector("#btn-header-login");
+
 function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {
   if (isLoggedIn) {
-    if (userNameLabel) userNameLabel.textContent = userDetail?.name || `用户 (${userId})`;
+    const displayName = userDetail?.name || (userId ? `网易云用户 (${userId})` : "VIP 用户");
+    if (userNameLabel) userNameLabel.textContent = displayName;
     if (userBadgePill) {
       userBadgePill.className = "vip-pill";
       userBadgePill.textContent = "VIP";
@@ -225,6 +228,10 @@ function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {
     }
     if (btnLoginQr) btnLoginQr.style.display = "none";
     if (btnLogout) btnLogout.style.display = "inline-flex";
+    if (btnHeaderLogin) {
+      btnHeaderLogin.innerHTML = `<span>👤 ${displayName}</span>`;
+      btnHeaderLogin.className = "btn btn-secondary";
+    }
   } else {
     if (userNameLabel) userNameLabel.textContent = "未登录 (游客)";
     if (userBadgePill) {
@@ -236,7 +243,24 @@ function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {
     }
     if (btnLoginQr) btnLoginQr.style.display = "inline-flex";
     if (btnLogout) btnLogout.style.display = "none";
+    if (btnHeaderLogin) {
+      btnHeaderLogin.innerHTML = `<span>🔑 登录网易云账号</span>`;
+      btnHeaderLogin.className = "btn btn-primary";
+    }
   }
+}
+
+if (btnHeaderLogin) {
+  btnHeaderLogin.addEventListener("click", () => {
+    const cookie = localStorage.getItem("netease_cookie") || "";
+    if (cookie) {
+      if (confirm("您当前已成功登录网易云账号。要切换或退出账号吗？")) {
+        handleLogout();
+      }
+    } else {
+      showQrModal();
+    }
+  });
 }
 
 function handleLogout() {

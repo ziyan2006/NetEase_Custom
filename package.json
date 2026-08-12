@@ -11,6 +11,6 @@
     "start": "node server.js",
     "electron": "npx electron .",
     "test": "node --test",
-    "pack": "npx @electron/packager . YesMusicDJHelper --platform=win32 --arch=x64 --out=build --overwrite --electron-version=34.3.0"
+    "pack": "npx @electron/packager . YesMusicDJHelper --platform=win32 --arch=x64 --out=dist_app --overwrite --electron-version=34.3.0"
   }
 }

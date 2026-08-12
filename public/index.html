@@ -51,7 +51,7 @@
               <span id="user-badge-pill">Guest</span>
             </div>
           </div>
-          <button id="btn-login-qr" class="btn btn-primary btn-sm" style="padding: 5px 10px; font-size: 11px;">登录</button>
+          <button id="btn-login-qr" class="btn btn-primary btn-sm" style="padding: 6px 12px; font-size: 12px; font-weight: 700;">🔑 登录</button>
           <button id="btn-logout" class="btn btn-secondary btn-sm" style="display:none; padding: 5px 10px; font-size: 11px;">退出</button>
         </div>
       </aside>
@@ -61,7 +61,10 @@
         <!-- 顶栏 Navbar -->
         <header class="top-header">
           <h1 id="header-page-title" class="page-title">云端歌单导出</h1>
-          <div class="top-actions">
+          <div class="top-actions" style="display: flex; gap: 12px; align-items: center;">
+            <button id="btn-header-login" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 6px; font-weight: 700;">
+              <span>🔑 登录网易云账号</span>
+            </button>
             <button id="btn-refresh-playlists" class="btn btn-secondary">
               <span>🔄 刷新数据</span>
             </button>
