@@ -312,17 +312,44 @@ async function selectNativeDirectory() {
   }
 }
 
-function createNewPlaylist() {
-  const name = prompt("请输入要新建的歌单名称：", "DJ New Set");
+async function createNewPlaylist() {
+  const name = prompt("请输入要新建的网易云歌单名称：", "DJ Set 2026");
   if (!name || !name.trim()) return;
-  mockPlaylists.push({
-    id: `pl_${Date.now()}`,
-    name: name.trim(),
-    trackCount: 0,
-    coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg"
-  });
-  renderPlaylists();
-  setStatusMessage(`已新建歌单「${name.trim()}」。`);
+
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  const trimmedName = name.trim();
+
+  if (cookie) {
+    showProgressModal(`➕ 正在新建网易云歌单...`, `正在同步提交至网易云服务器...`);
+    try {
+      const res = await fetch("/api/playlist/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName, privacy: 0, cookie }),
+      });
+      const data = await res.json();
+      if (data.code === 200 && (data.playlist || data.id)) {
+        updateProgressModal(100, `新建网易云歌单「${trimmedName}」成功！`);
+        setStatusMessage(`成功在您的网易云账号下新建歌单「${trimmedName}」！`);
+        await loadUserPlaylists(cookie);
+      } else {
+        alert("创建歌单失败: " + (data.message || data.msg || "网易云服务器拒绝"));
+      }
+    } catch (err) {
+      alert("创建歌单发生错误: " + err.message);
+    } finally {
+      setTimeout(hideProgressModal, 800);
+    }
+  } else {
+    mockPlaylists.unshift({
+      id: `pl_${Date.now()}`,
+      name: trimmedName,
+      trackCount: 0,
+      coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg"
+    });
+    renderPlaylists();
+    setStatusMessage(`(游客模式) 已新建本地临时歌单「${trimmedName}」，登录后可同步云端。`);
+  }
 }
 
 async function exportPlaylist(id, name) {

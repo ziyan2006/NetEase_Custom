@@ -294,6 +294,58 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "POST" && urlObj.pathname === "/api/playlist/create") {
+      try {
+        const bodyStr = await new Promise((resolve, reject) => {
+          let chunks = [];
+          request.on("data", (chunk) => chunks.push(chunk));
+          request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          request.on("error", reject);
+        });
+        const params = JSON.parse(bodyStr);
+        const { name, privacy = 0, cookie } = params;
+        if (!name || !name.trim()) {
+          sendJson(response, 400, { message: "歌单名称不能为空" });
+          return;
+        }
+        const resData = await fetchNetEaseApi("/playlist/create", {
+          method: "POST",
+          body: { name: name.trim(), privacy: privacy.toString() },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "新建歌单发生异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/playlist/delete") {
+      try {
+        const bodyStr = await new Promise((resolve, reject) => {
+          let chunks = [];
+          request.on("data", (chunk) => chunks.push(chunk));
+          request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+          request.on("error", reject);
+        });
+        const params = JSON.parse(bodyStr);
+        const { id, cookie } = params;
+        if (!id) {
+          sendJson(response, 400, { message: "歌单 ID 不能为空" });
+          return;
+        }
+        const resData = await fetchNetEaseApi("/playlist/delete", {
+          method: "POST",
+          body: { pid: id.toString(), id: id.toString() },
+          cookie,
+        });
+        sendJson(response, 200, resData);
+      } catch (err) {
+        sendJson(response, 500, { message: "删除歌单发生异常: " + err.message });
+      }
+      return;
+    }
+
     if (request.method === "POST" && urlObj.pathname === "/api/playlist/export") {
       try {
         const bodyStr = await new Promise((resolveResolve, rejectReject) => {
