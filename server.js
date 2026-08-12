@@ -353,16 +353,19 @@ export function createAppServer() {
 
         // 3. 循环下载、解密 NCM 并进行 MP3 转码压制
         for (const track of tracks) {
-          const downloadUrl = songUrlsMap.get(track.id);
+          const initialUrl = songUrlsMap.get(track.id);
           const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
           const title = track.name;
 
-          if (!downloadUrl) {
-            failedTracks.push({ title, artist, reason: "无法获取下载链接 (VIP 限制或独家版权受限)" });
-            continue;
-          }
-
-          try {
+          const attemptDownloadWithQuality = async (targetBr) => {
+            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url", {
+              params: { ids: JSON.stringify([track.id]), br: targetBr, timestamp: Date.now() },
+              cookie,
+            });
+            const downloadUrl = playerUrlRes?.data?.[0]?.url;
+            if (!downloadUrl) {
+              throw new Error(`无法获取 ${targetBr / 1000}k 音频播放直链`);
+            }
             await downloadAndExportTrack({
               outputRoot,
               playlistName: name,
@@ -371,9 +374,41 @@ export function createAppServer() {
               downloadUrl,
               cookie,
             });
-            successTracks.push({ title, artist });
+          };
+
+          try {
+            // 首先尝试使用批量获取的初始直链（320k 最高画质/音质）
+            if (initialUrl) {
+              try {
+                await downloadAndExportTrack({
+                  outputRoot,
+                  playlistName: name,
+                  artist,
+                  title,
+                  downloadUrl: initialUrl,
+                  cookie,
+                });
+                successTracks.push({ title, artist });
+                continue;
+              } catch (errInitial) {
+                console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试降级 192k: ${artist} - ${title}`, errInitial.message);
+              }
+            } else {
+              // 若批量获取中无直链，直接降级尝试 192k
+              console.warn(`[DOWNLOAD FALLBACK] 初始直链缺失，尝试降级 192k: ${artist} - ${title}`);
+            }
+
+            // 降级链尝试：192k -> 128k
+            try {
+              await attemptDownloadWithQuality(192000);
+              successTracks.push({ title, artist });
+            } catch (err192) {
+              console.warn(`[DOWNLOAD FALLBACK] 192k 降级下载失败，尝试最终降级 128k: ${artist} - ${title}`, err192.message);
+              await attemptDownloadWithQuality(128000);
+              successTracks.push({ title, artist });
+            }
           } catch (err) {
-            console.error(`导出曲目失败: ${artist} - ${title}`, err);
+            console.error(`导出曲目最终失败: ${artist} - ${title}`, err);
             failedTracks.push({ title, artist, reason: err.message });
           }
         }
