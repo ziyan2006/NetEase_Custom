@@ -169,7 +169,7 @@ async function serveStatic(request, response) {
   }
 }
 
-import { formatQrImageUrl, fetchNetEaseApi } from "./lib/netease-api.js";
+import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse } from "./lib/netease-api.js";
 
 export function createAppServer() {
   return createHttpServer(async (request, response) => {
