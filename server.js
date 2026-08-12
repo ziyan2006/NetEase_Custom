@@ -180,7 +180,46 @@ async function serveStatic(request, response) {
 
 import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse } from "./lib/netease-api.js";
 
+async function runDiagnostic() {
+  console.log("[DIAGNOSTIC] Running NetEase CDN download test...");
+  try {
+    const res = await fetchNetEaseApi("/song/enhance/player/url", {
+      params: { ids: JSON.stringify(["2638599405"]), br: 320000, timestamp: Date.now() }
+    });
+    const downloadUrl = res?.data?.[0]?.url;
+    if (!downloadUrl) {
+      console.log("[DIAGNOSTIC] Failed to get player URL.");
+      return;
+    }
+    console.log("[DIAGNOSTIC] Target CDN URL:", downloadUrl);
+
+    // Case 1: No headers
+    try {
+      const r1 = await fetch(downloadUrl);
+      console.log(`[DIAGNOSTIC] Case 1 (No Headers) Status: ${r1.status}`);
+    } catch (e) {
+      console.log(`[DIAGNOSTIC] Case 1 failed: ${e.message}`);
+    }
+
+    // Case 2: Browser UA + Referer
+    try {
+      const r2 = await fetch(downloadUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://music.163.com/"
+        }
+      });
+      console.log(`[DIAGNOSTIC] Case 2 (UA + Referer) Status: ${r2.status}`);
+    } catch (e) {
+      console.log(`[DIAGNOSTIC] Case 2 failed: ${e.message}`);
+    }
+  } catch (err) {
+    console.log("[DIAGNOSTIC] Error running diagnostic:", err.message);
+  }
+}
+
 export function createAppServer() {
+  setTimeout(runDiagnostic, 2000);
   return createHttpServer(async (request, response) => {
     const urlObj = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
 
