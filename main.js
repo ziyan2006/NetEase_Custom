@@ -1,4 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
+// 强行禁用内置 Chromium 的代理服务器，绕过一切 Clash/V2Ray 系统级代理，确保 CDN 直连国内节点
+app.commandLine.appendSwitch("no-proxy-server");
+
 import { createAppServer } from "./server.js";
 import path from "path";
 import { fileURLToPath } from "url";
