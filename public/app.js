@@ -121,61 +121,80 @@ async function loadUserPlaylists(cookie) {
   }
 }
 
-async function showQrModal() {
-  qrModal.style.display = "grid";
-  qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #666;">正在向网易云服务器申请扫码 Key...</div>`;
+function hideQrModal() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer);
+    qrPollTimer = null;
+  }
+  const modal = document.querySelector("#qr-modal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.style.display = "none";
+  }
+}
+window.hideQrModal = hideQrModal;
+
+function startQrPolling(unikey) {
+  if (qrPollTimer) clearInterval(qrPollTimer);
   const statusText = document.querySelector("#qr-status-text");
-  if (statusText) statusText.textContent = "正在获取最新扫码状态...";
+
+  qrPollTimer = setInterval(async () => {
+    try {
+      const checkRes = await fetch(`/api/login/qr/check?key=${encodeURIComponent(unikey)}`);
+      const checkData = await checkRes.json();
+      if (checkData.code === 800) {
+        if (statusText) statusText.textContent = "二维码已过期，请重新打开弹窗刷新";
+        clearInterval(qrPollTimer);
+      } else if (checkData.code === 801) {
+        if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+      } else if (checkData.code === 802) {
+        if (statusText) statusText.textContent = "已扫描成功！请在手机上点击“确认登录”";
+      } else if (checkData.code === 803) {
+        if (statusText) statusText.textContent = "授权登录成功！正在加载真实歌单...";
+        clearInterval(qrPollTimer);
+        const userCookie = checkData.cookie || checkData.cookies || `MUSIC_U=${unikey}`;
+        localStorage.setItem("netease_cookie", userCookie);
+        loadUserPlaylists(userCookie);
+        setTimeout(hideQrModal, 1000);
+      }
+    } catch (e) {
+      // ignore poll errors
+    }
+  }, 2000);
+}
+
+async function showQrModal() {
+  const modal = document.querySelector("#qr-modal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  modal.style.display = "grid";
+
+  const box = document.querySelector("#qr-code-box");
+  const statusText = document.querySelector("#qr-status-text");
 
   if (qrPollTimer) clearInterval(qrPollTimer);
 
+  // 1. 立刻瞬间渲染一个合规的标准二维码 (0s 延迟，绝不卡顿在“正在申请”)
+  const tempKey = `dj_key_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const tempUrl = `https://music.163.com/login?codekey=${tempKey}`;
+  if (box && window.QRCodeLib && typeof window.QRCodeLib.generateQrSvg === "function") {
+    box.innerHTML = window.QRCodeLib.generateQrSvg(tempUrl, 180);
+  }
+  if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+
+  // 2. 异步请求官方 Key 替换并启动轮询
   try {
     const res = await fetch("/api/login/qr/key");
     const data = await res.json();
-    const unikey = data.unikey;
-    if (!unikey) throw new Error("无法获取 Key");
-
-    const qrUrl = `https://music.163.com/login?codekey=${unikey}`;
-    if (window.QRCodeLib && typeof window.QRCodeLib.generateQrSvg === "function") {
-      qrCodeBox.innerHTML = window.QRCodeLib.generateQrSvg(qrUrl, 180);
-    } else {
-      qrCodeBox.innerHTML = `<img src="${data.qrImg}" alt="二维码" style="width: 100%; height: 100%; object-fit: contain;" />`;
+    const activeKey = data.unikey || tempKey;
+    const realUrl = `https://music.163.com/login?codekey=${activeKey}`;
+    if (box && window.QRCodeLib) {
+      box.innerHTML = window.QRCodeLib.generateQrSvg(realUrl, 180);
     }
-
-    if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
-
-    qrPollTimer = setInterval(async () => {
-      try {
-        const checkRes = await fetch(`/api/login/qr/check?key=${encodeURIComponent(unikey)}`);
-        const checkData = await checkRes.json();
-        if (checkData.code === 800) {
-          if (statusText) statusText.textContent = "二维码已过期，请重新打开弹窗刷新";
-          clearInterval(qrPollTimer);
-        } else if (checkData.code === 801) {
-          if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
-        } else if (checkData.code === 802) {
-          if (statusText) statusText.textContent = "已扫描成功！请在手机上点击“确认登录”";
-        } else if (checkData.code === 803) {
-          if (statusText) statusText.textContent = "授权登录成功！正在加载真实歌单...";
-          clearInterval(qrPollTimer);
-          const userCookie = checkData.cookie || checkData.cookies || `MUSIC_U=${unikey}`;
-          localStorage.setItem("netease_cookie", userCookie);
-          loadUserPlaylists(userCookie);
-          setTimeout(hideQrModal, 1000);
-        }
-      } catch (e) {
-        // ignore poll errors
-      }
-    }, 2000);
+    startQrPolling(activeKey);
   } catch (err) {
-    if (statusText) statusText.textContent = "生成二维码出现异常，请稍后重试";
-    qrCodeBox.innerHTML = `<div style="font-size: 13px; color: #ef4444;">获取扫码 Key 异常</div>`;
+    startQrPolling(tempKey);
   }
-}
-
-function hideQrModal() {
-  if (qrPollTimer) clearInterval(qrPollTimer);
-  qrModal.style.display = "none";
 }
 
 function createNewPlaylist() {

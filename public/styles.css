@@ -234,6 +234,10 @@ button.danger-btn {
   z-index: 999;
 }
 
+.modal.hidden, .hidden {
+  display: none !important;
+}
+
 .modal-content {
   width: 320px;
   padding: 24px;

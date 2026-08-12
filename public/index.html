@@ -24,12 +24,12 @@
 
       <div class="dj-panel">
         <!-- 扫码登录弹窗 -->
-        <div id="qr-modal" class="modal" style="display: none;">
+        <div id="qr-modal" class="modal hidden" style="display: none;" onclick="if(event.target === this) window.hideQrModal && window.hideQrModal();">
           <div class="modal-content">
             <h3>网易云音乐 App 扫码登录</h3>
             <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
             <p id="qr-status-text">请使用网易云音乐手机 App 扫描上方二维码</p>
-            <button id="btn-close-qr" class="small-btn">关闭窗口</button>
+            <button id="btn-close-qr" class="small-btn" onclick="window.hideQrModal && window.hideQrModal();">关闭窗口</button>
           </div>
         </div>
 
