@@ -605,3 +605,66 @@ body {
   transition: width 0.3s ease;
   border-radius: var(--radius-full);
 }
+
+/* Top-Most Progress Overlay Modal (Blocking Duplicate Actions) */
+.top-most-modal {
+  z-index: 9999 !important;
+  background: rgba(10, 10, 14, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+}
+
+.progress-modal-card {
+  width: 440px !important;
+  padding: 36px 32px !important;
+  background: #181822 !important;
+  border: 1px solid rgba(234, 68, 83, 0.25) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), var(--shadow-glow) !important;
+}
+
+.progress-spinner {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pulse-circle {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  border: 3px solid rgba(234, 68, 83, 0.2);
+  border-top-color: var(--brand-red);
+  animation: spin 1s linear infinite;
+}
+
+.pulse-icon {
+  font-size: 24px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 1; }
+}
+
+.lock-notice {
+  margin-top: 22px;
+  padding: 10px 14px;
+  background: rgba(234, 68, 83, 0.08);
+  border: 1px solid rgba(234, 68, 83, 0.2);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: left;
+  line-height: 1.5;
+}
+

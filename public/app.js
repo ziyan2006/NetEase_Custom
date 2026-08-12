@@ -60,6 +60,33 @@ let mockPlaylists = [
   { id: "pl_03", name: "Pop Remixes 2026", trackCount: 52, coverUrl: "https://p1.music.126.net/8888==/109951165406022569.jpg" },
 ];
 
+// 顶层全屏阻断进度遮罩控制
+const exportProgressModal = document.querySelector("#export-progress-modal");
+const modalProgressTitle = document.querySelector("#modal-progress-title");
+const modalProgressSubtitle = document.querySelector("#modal-progress-subtitle");
+const modalProgressFill = document.querySelector("#modal-progress-fill");
+const modalProgressPercent = document.querySelector("#modal-progress-percent");
+
+function showProgressModal(title, subtitle = "正在从网易云提取音频流并进行 MP3 无损处理...") {
+  if (!exportProgressModal) return;
+  if (modalProgressTitle) modalProgressTitle.textContent = title;
+  if (modalProgressSubtitle) modalProgressSubtitle.textContent = subtitle;
+  if (modalProgressFill) modalProgressFill.style.width = "0%";
+  if (modalProgressPercent) modalProgressPercent.textContent = "0%";
+  exportProgressModal.classList.add("active");
+}
+
+function updateProgressModal(percent, subtitle) {
+  if (modalProgressFill) modalProgressFill.style.width = `${percent}%`;
+  if (modalProgressPercent) modalProgressPercent.textContent = `${Math.min(100, Math.round(percent))}%`;
+  if (subtitle && modalProgressSubtitle) modalProgressSubtitle.textContent = subtitle;
+}
+
+function hideProgressModal() {
+  if (!exportProgressModal) return;
+  exportProgressModal.classList.remove("active");
+}
+
 function setStatusMessage(msg, isProgress = false, progressPercent = 0) {
   if (!statusCard || !statusText) return;
   statusCard.classList.add("active");
@@ -279,9 +306,12 @@ async function exportPlaylist(id, name) {
   const root = outputRootInput.value || "D:\\DJ_Music_Library";
   const cookie = localStorage.getItem("netease_cookie") || "";
   
-  setStatusMessage(`正在从网易云服务器拉取并导出歌单「${name}」曲目，请稍候… (正在转换为 320k MP3)`, true, 45);
+  showProgressModal(`⚡ 正在导出歌单「${name}」...`, `正在向网易云服务端校验 VIP 账号身份与歌单曲目数据...`);
+  updateProgressModal(25, `从网易云获取 320k 极高音质直链中...`);
+  setStatusMessage(`正在导出歌单「${name}」曲目，请稍候…`, true, 25);
   
   try {
+    updateProgressModal(50, `正在进行 NCM 解密与 FFmpeg 高品质 320k MP3 压制压盘...`);
     const res = await fetch("/api/playlist/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -290,12 +320,17 @@ async function exportPlaylist(id, name) {
     
     const data = await res.json();
     if (res.ok && data.code === 200) {
+      updateProgressModal(100, `歌单导出完成！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。`);
       setStatusMessage(`歌单「${name}」导出成功！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。文件保存在: ${root}\\${name}\\`, true, 100);
     } else {
+      updateProgressModal(100, `导出失败：${data.message || "未知错误"}`);
       setStatusMessage(`导出失败：${data.message || "未知错误"}`);
     }
   } catch (err) {
+    updateProgressModal(100, `导出异常：${err.message}`);
     setStatusMessage(`导出发生异常：${err.message}`);
+  } finally {
+    setTimeout(hideProgressModal, 1200);
   }
 }
 
@@ -356,11 +391,15 @@ form.addEventListener("submit", async (event) => {
   const targetFormat = document.querySelector("#format").value;
   button.disabled = true;
 
+  showProgressModal(`🎵 正在处理 ${file.name}...`, `正在纯前端解密/转码为 ${targetFormat.toUpperCase()} 音频...`);
+  updateProgressModal(25, `读取文件特征并校验魔数头部...`);
+
   try {
     const isNcm = file.name.toLowerCase().endsWith(".ncm");
 
     if (isNcm) {
-      setStatusMessage(`正在纯前端解密 NCM 文件 ${file.name}…`, true, 30);
+      updateProgressModal(45, `纯前端解密 NCM 专属加密流...`);
+      setStatusMessage(`正在纯前端解密 NCM 文件 ${file.name}…`, true, 45);
       const arrayBuffer = await file.arrayBuffer();
       const ncmResult = window.decryptNcm(arrayBuffer);
 
@@ -368,6 +407,7 @@ form.addEventListener("submit", async (event) => {
       const decryptedFormat = ncmResult.format;
 
       if (targetFormat === decryptedFormat) {
+        updateProgressModal(100, `NCM 解密完成 (${decryptedFormat.toUpperCase()})，下载已开始！`);
         setStatusMessage("解密完成，直接在浏览器中下载音频…", true, 100);
         const mimeTypes = { mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
         const blob = new Blob([ncmResult.audioBuffer], { type: mimeTypes[decryptedFormat] || "application/octet-stream" });
@@ -380,7 +420,8 @@ form.addEventListener("submit", async (event) => {
         return;
       }
 
-      setStatusMessage(`NCM 解密完成，正在本机 FFmpeg 转换为 ${targetFormat.toUpperCase()}…`, true, 60);
+      updateProgressModal(70, `NCM 解密完成，正在本机 FFmpeg 转换为 ${targetFormat.toUpperCase()}...`);
+      setStatusMessage(`NCM 解密完成，正在本机 FFmpeg 转换为 ${targetFormat.toUpperCase()}…`, true, 70);
       const mimeTypes = { mp3: "audio/mpeg", flac: "audio/flac" };
       const decryptedBlob = new Blob([ncmResult.audioBuffer], { type: mimeTypes[decryptedFormat] || "application/octet-stream" });
       const tempFile = new File([decryptedBlob], `${baseName}.${decryptedFormat}`, { type: decryptedBlob.type });
@@ -395,6 +436,7 @@ form.addEventListener("submit", async (event) => {
         throw new Error(body.message ?? "转码失败。");
       }
 
+      updateProgressModal(100, `转换完成，下载已开始！`);
       const link = document.createElement("a");
       link.href = URL.createObjectURL(await response.blob());
       const disposition = response.headers.get("content-disposition") ?? "";
@@ -406,6 +448,7 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
+    updateProgressModal(50, `正在本机 FFmpeg 核心引擎中极速转换为 ${targetFormat.toUpperCase()}...`);
     setStatusMessage(`正在本机转换 ${file.name}…`, true, 50);
     const response = await fetch("/api/convert", { method: "POST", body: new FormData(form) });
     if (!response.ok) {
