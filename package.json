@@ -1,12 +1,16 @@
 {
-  "name": "local-audio-converter",
-  "version": "0.1.0",
+  "name": "yesmusic-dj-helper",
+  "productName": "YesMusicDJHelper",
+  "version": "1.0.0",
+  "description": "DJ 专属网易云音乐助手与本地音频转换转码器",
+  "author": "ziyan2006",
   "private": true,
   "type": "module",
   "main": "main.js",
   "scripts": {
     "start": "node server.js",
     "electron": "npx electron .",
-    "test": "node --test"
+    "test": "node --test",
+    "pack": "npx @electron/packager . YesMusicDJHelper --platform=win32 --arch=x64 --out=build --overwrite --electron-version=34.3.0"
   }
 }
