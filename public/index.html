@@ -13,9 +13,10 @@
           <p class="eyebrow">DJ STUDIO EDITION · DESKTOP APP</p>
           <h1>本地音频转换与网易云歌单助手</h1>
         </div>
-        <div id="auth-status-container">
+        <div id="auth-status-container" class="auth-bar">
+          <span id="login-status-badge" class="status-badge logged-out">🔴 未登录 (游客模式)</span>
           <button id="btn-login-qr" class="secondary-btn">🔑 网易云扫码登录</button>
-          <span id="user-info" class="user-badge" style="display:none;">已登录 DJ 账号</span>
+          <button id="btn-logout" class="small-btn danger-btn" style="display:none;">退出</button>
         </div>
       </header>
 

@@ -63,10 +63,44 @@ async function selectNativeDirectory() {
   }
 }
 
+const loginStatusBadge = document.querySelector("#login-status-badge");
+const btnLogout = document.querySelector("#btn-logout");
+
+function updateLoginStatusUI(isLoggedIn, userId = "") {
+  if (!loginStatusBadge) return;
+
+  if (isLoggedIn) {
+    loginStatusBadge.className = "status-badge logged-in";
+    loginStatusBadge.textContent = `🟢 已登录 (${userId ? "ID: " + userId : "网易云账号"})`;
+    if (btnLoginQr) btnLoginQr.style.display = "none";
+    if (btnLogout) btnLogout.style.display = "inline-block";
+  } else {
+    loginStatusBadge.className = "status-badge logged-out";
+    loginStatusBadge.textContent = "🔴 未登录 (游客模式)";
+    if (btnLoginQr) btnLoginQr.style.display = "inline-block";
+    if (btnLogout) btnLogout.style.display = "none";
+  }
+}
+
+function handleLogout() {
+  if (confirm("确定要退出当前网易云账号登录吗？")) {
+    localStorage.removeItem("netease_cookie");
+    mockPlaylists = [];
+    renderPlaylists();
+    updateLoginStatusUI(false);
+    status.textContent = "已退出登录，处于游客模式。";
+  }
+}
+
+if (btnLogout) btnLogout.addEventListener("click", handleLogout);
+
 let currentCookie = localStorage.getItem("netease_cookie") || "";
 
 async function loadUserPlaylists(cookie) {
-  if (!cookie) return;
+  if (!cookie) {
+    updateLoginStatusUI(false);
+    return;
+  }
   try {
     status.textContent = "正在向网易云服务器获取您的真实歌单列表…";
     const res = await fetch(`/api/user/playlists?cookie=${encodeURIComponent(cookie)}`);
@@ -74,17 +108,15 @@ async function loadUserPlaylists(cookie) {
     if (data.code === 200 && Array.isArray(data.playlists)) {
       mockPlaylists = data.playlists;
       renderPlaylists();
-      if (userInfoBadge) {
-        userInfoBadge.style.display = "inline-block";
-        userInfoBadge.textContent = `已登录网易云账号 (ID: ${data.userId || "DJ"})`;
-      }
-      if (btnLoginQr) btnLoginQr.style.display = "none";
+      updateLoginStatusUI(true, data.userId);
       status.textContent = `成功获取到 ${data.playlists.length} 个真实网易云歌单！`;
     } else {
+      updateLoginStatusUI(false);
       status.textContent = data.message || "登录 Cookie 已过期，请重新扫码。";
       localStorage.removeItem("netease_cookie");
     }
   } catch (err) {
+    updateLoginStatusUI(false);
     status.textContent = "获取真实歌单失败：" + err.message;
   }
 }
