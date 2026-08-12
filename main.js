@@ -53,8 +53,8 @@ ipcMain.on("netease:open-login", () => {
   }
 
   loginWindow = new BrowserWindow({
-    width: 530,
-    height: 620,
+    width: 1020,
+    height: 700,
     title: "网易云官方安全登录",
     parent: mainWindow,
     modal: true,
@@ -65,12 +65,30 @@ ipcMain.on("netease:open-login", () => {
     },
   });
 
-  // 伪装成标准的纯 Chrome 浏览器，剔除 Electron 特征以绕过风控
   const chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
   loginWindow.webContents.setUserAgent(chromeUA);
 
-  // 使用网易云官方提供的标准 Web iframe 登录页（原生包含扫码/手机验证码/密码等多种形式）
-  loginWindow.loadURL("https://music.163.com/html/web2/page/login.html");
+  // 直接加载官方主站，避免特定二级页面 404
+  loginWindow.loadURL("https://music.163.com/");
+
+  // 页面加载完成后自动触发顶部“登录”按钮点击，调出扫码框
+  loginWindow.webContents.on("did-finish-load", () => {
+    loginWindow.webContents.executeJavaScript(`
+      const tryClickLogin = () => {
+        const btn = document.querySelector('[data-action="login"]') || 
+                    document.querySelector('.link.s-fc3') ||
+                    document.querySelector('#g_nav2 .link') ||
+                    document.querySelector('a[href*="login"]');
+        if (btn) {
+          btn.click();
+          console.log("[JS Injection] Clicked NetEase login button successfully.");
+        }
+      };
+      tryClickLogin();
+      setTimeout(tryClickLogin, 800);
+      setTimeout(tryClickLogin, 2000);
+    `).catch(() => {});
+  });
 
   loginWindow.on("closed", () => {
     loginWindow = null;
