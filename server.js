@@ -385,29 +385,12 @@ export function createAppServer() {
 
             // 2. 降级使用网易云官方嵌入式通用外链接口
             const outerUrl = `https://music.163.com/song/media/outer/url?id=${track.id}.mp3`;
-            try {
-              await downloadAndExportTrack({
-                outputRoot,
-                playlistName: name,
-                artist,
-                title,
-                downloadUrl: outerUrl,
-                cookie,
-              });
-              successTracks.push({ title, artist });
-              continue;
-            } catch (errOuter) {
-              console.warn(`[DOWNLOAD FALLBACK] 官方外链下载失败，尝试三级 Meting 聚合通道: ${artist} - ${title}`, errOuter.message);
-            }
-
-            // 3. 终极降级：使用 Meting 聚合通道提取受限/VIP 音频流
-            const metingUrl = `https://api.qijieya.cn/meting/?type=url&id=${track.id}`;
             await downloadAndExportTrack({
               outputRoot,
               playlistName: name,
               artist,
               title,
-              downloadUrl: metingUrl,
+              downloadUrl: outerUrl,
               cookie,
             });
             successTracks.push({ title, artist });
