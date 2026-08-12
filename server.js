@@ -322,6 +322,7 @@ export function createAppServer() {
               artist,
               title,
               downloadUrl,
+              cookie,
             });
             successTracks.push({ title, artist });
           } catch (err) {
