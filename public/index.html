@@ -3,103 +3,175 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>DJ 专属网易云音乐下载与歌单管理助手</title>
+    <title>DJ 音频助手 · 本地音频转换与网易云歌单助手</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main>
-      <header class="dj-header">
-        <div>
-          <p class="eyebrow">DJ STUDIO EDITION · DESKTOP APP</p>
-          <h1>本地音频转换与网易云歌单助手</h1>
+    <div class="app-layout">
+      <!-- 左侧 YesPlayMusic 侧边栏 Sidebar -->
+      <aside class="sidebar">
+        <div class="brand-container">
+          <div class="brand-logo">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+            </svg>
+          </div>
+          <div>
+            <div class="brand-text">YesMusic <span class="brand-tag">本地音频转换</span></div>
+          </div>
         </div>
-        <div id="auth-status-container" class="auth-bar">
-          <span id="login-status-badge" class="status-badge logged-out">🔴 未登录 (游客模式)</span>
-          <button id="btn-login-qr" class="secondary-btn">🔑 网易云扫码登录</button>
-          <button id="btn-logout" class="small-btn danger-btn" style="display:none;">退出</button>
+
+        <nav class="nav-menu">
+          <div class="nav-item active" data-tab="playlists">
+            <div class="nav-icon">🎧</div>
+            <span>云端歌单导出</span>
+          </div>
+          <div class="nav-item" data-tab="settings">
+            <div class="nav-icon">📂</div>
+            <span>导出根目录</span>
+          </div>
+          <div class="nav-item" data-tab="local">
+            <div class="nav-icon">🎵</div>
+            <span>本地单文件转码</span>
+          </div>
+        </nav>
+
+        <!-- 底部用户凭证卡片 -->
+        <div class="user-sidebar-card">
+          <div class="user-avatar-box">
+            <img id="user-avatar-img" src="https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg" alt="用户头像" />
+          </div>
+          <div class="user-info-text">
+            <div id="user-name-label" class="user-name">未登录 (游客)</div>
+            <div id="user-status-detail" class="user-badge">
+              <span id="user-badge-pill">Guest</span>
+            </div>
+          </div>
+          <button id="btn-login-qr" class="btn btn-primary btn-sm" style="padding: 5px 10px; font-size: 11px;">登录</button>
+          <button id="btn-logout" class="btn btn-secondary btn-sm" style="display:none; padding: 5px 10px; font-size: 11px;">退出</button>
         </div>
-      </header>
+      </aside>
 
-      <p class="intro">专为 DJ 与音乐制作人打造：一键下载云端歌单、NCM 解密与最高品质 320kbps MP3 转码压制，注入完整 ID3 标签，完美兼容 Rekordbox & Serato DJ。</p>
+      <!-- 右侧主内容区 Workspace -->
+      <main class="main-workspace">
+        <!-- 顶栏 Navbar -->
+        <header class="top-header">
+          <h1 id="header-page-title" class="page-title">云端歌单导出</h1>
+          <div class="top-actions">
+            <button id="btn-refresh-playlists" class="btn btn-secondary">
+              <span>🔄 刷新歌单</span>
+            </button>
+          </div>
+        </header>
 
-      <div class="dj-panel">
-        <!-- 扫码登录弹窗 -->
-        <div id="qr-modal" class="modal hidden" style="display: none;" onclick="if(event.target === this) window.hideQrModal && window.hideQrModal();">
-          <div class="modal-content" style="width: 340px;">
-            <h3>网易云音乐 App 扫码登录</h3>
-            <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
-            <p id="qr-status-text">请使用网易云音乐手机 App 扫描上方二维码</p>
-            
-            <!-- 风控兜底：手动导入 MUSIC_U -->
-            <div id="manual-cookie-section" style="margin-top: 16px; border-top: 1px dashed rgba(255,255,255,0.15); padding-top: 14px; text-align: left;">
-              <p style="font-size: 11px; color: #a1a1aa; line-height: 1.5; margin-bottom: 8px;">
-                💡 <b>风控兜底</b>：若扫码提示失效或环境风险，可粘贴网易云浏览器端 <code>MUSIC_U</code> 凭证直接登录：
-              </p>
-              <div style="display: flex; gap: 6px;">
-                <input id="input-music-u" type="password" placeholder="粘贴你的 MUSIC_U 值 (如: 09ab...)" style="padding: 6px 10px; font-size: 11px; flex: 1; border-color: #3f3f46; height: 32px;" />
-                <button id="btn-submit-music-u" class="small-btn primary" style="padding: 0 12px; font-size: 11px; height: 32px;">确定</button>
+        <!-- 视图 1: 歌单导出网格 -->
+        <div id="tab-playlists" class="view-panel active">
+          <div class="card-section">
+            <div class="section-header">
+              <div class="section-title">
+                <span>🎧 我的网易云歌单</span>
               </div>
-              <p style="font-size: 10px; color: #71717a; margin-top: 6px; line-height: 1.4;">
-                获取方法：电脑浏览器登录网易云官网 -> F12 开发人员工具 -> 应用 (Application) -> Cookie -> 复制 MUSIC_U 值。
-              </p>
+              <button id="btn-create-playlist" class="btn btn-primary btn-sm">+ 新建歌单</button>
             </div>
-
-            <button id="btn-close-qr" class="small-btn" style="margin-top: 14px;" onclick="window.hideQrModal && window.hideQrModal();">关闭窗口</button>
+            
+            <div id="playlist-list-container" class="playlist-grid">
+              <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">
+                正在拉取歌单信息...
+              </div>
+            </div>
           </div>
         </div>
 
-        <!-- 统一根目录设置 -->
-        <section class="section-card">
-          <div class="section-title">📂 统一导出根目录设置</div>
-          <div class="input-with-button">
-            <input id="output-root" name="outputRoot" type="text" value="D:\DJ_Music_Library" placeholder="例如 D:\DJ_Music_Library" required />
-            <button id="btn-select-folder" type="button" class="small-btn">浏览原生目录...</button>
-          </div>
-          <small style="margin-top: 6px; display: block;">导出时，每个歌单将在该根目录下自动建立独立文件夹，内部只保留标准 MP3 文件。</small>
-        </section>
-
-        <!-- 我的云端歌单与管理 -->
-        <section class="section-card">
-          <div class="playlist-header">
-            <div class="section-title">🎧 我的网易云歌单管理</div>
-            <button id="btn-create-playlist" type="button" class="small-btn">+ 新建歌单</button>
-          </div>
-
-          <div id="playlist-list-container" class="playlist-grid">
-            <div class="empty-tip">未登录或点击扫码登录后查看网易云歌单</div>
-          </div>
-        </section>
-
-        <!-- 单音频拖拽转换区 -->
-        <section class="section-card">
-          <div class="section-title">🎵 本地单文件转码/解密 (含 NCM)</div>
-          <form id="converter-form">
-            <label class="dropzone" for="file">
-              <span>选择或拖拽本地音频 / NCM 文件</span>
-              <small>支持 NCM、MP3、WAV、FLAC、M4A、AAC、OGG、OPUS、WebM；最大 50 MB</small>
-              <input id="file" name="file" type="file" accept="audio/*,.m4a,.opus,.ncm" />
-            </label>
-            <div style="margin-top: 14px; display: flex; gap: 12px; align-items: center;">
-              <select id="format" name="format" style="max-width: 220px;">
-                <option value="mp3" selected>MP3 (DJ 专用 320kbps)</option>
-                <option value="wav">WAV (Uncompressed)</option>
-                <option value="flac">FLAC (Lossless)</option>
-                <option value="m4a">M4A (AAC)</option>
-                <option value="ogg">OGG</option>
-              </select>
-              <button id="convert" class="primary" type="submit" style="flex:1;">⚡ 转码本地单文件</button>
+        <!-- 视图 2: 导出路径与配置 -->
+        <div id="tab-settings" class="view-panel">
+          <div class="card-section">
+            <div class="section-header">
+              <div class="section-title">
+                <span>📂 统一导出根目录设置</span>
+              </div>
             </div>
-          </form>
-        </section>
+            <div class="form-group">
+              <label class="form-label" for="output-root">目标根路径 (支持 Windows 本地磁盘全路径):</label>
+              <div style="display: flex; gap: 10px;">
+                <input id="output-root" name="outputRoot" class="input-box" type="text" value="D:\DJ_Music_Library" placeholder="例如 D:\DJ_Music_Library" required />
+                <button id="btn-select-folder" type="button" class="btn btn-secondary">浏览目录...</button>
+              </div>
+              <small style="color: var(--text-muted); margin-top: 6px; font-size: 12px;">
+                导出时，每个歌单将在该目录下自动建立独立文件夹，内部只输出最高画质 320kbps MP3 音乐。
+              </small>
+            </div>
+          </div>
+        </div>
 
-        <p id="status" role="status" aria-live="polite"></p>
+        <!-- 视图 3: 本地音频 / NCM 拖拽转码 -->
+        <div id="tab-local" class="view-panel">
+          <div class="card-section">
+            <div class="section-header">
+              <div class="section-title">
+                <span>🎵 本地单文件转码 / NCM 解密</span>
+              </div>
+            </div>
+            <form id="converter-form">
+              <label class="dropzone-box" for="file">
+                <svg class="dropzone-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+                <div class="dropzone-text">点击选择或将文件拖拽至此处</div>
+                <div class="dropzone-hint">支持 NCM、MP3、WAV、FLAC、M4A、AAC、OGG、OPUS；单文件最大 50 MB</div>
+                <input id="file" name="file" type="file" accept="audio/*,.m4a,.opus,.ncm" style="display: none;" />
+              </label>
 
-        <aside>
-          <strong>🎧 导出生态规则：</strong>
-          所有的 `.ncm` 及无损音频解密压制后，均统一导出为 `歌手名 - 歌曲名.mp3` 的格式，自动注入网易云歌名、歌手与唱片封面，极速导入 DJ 软件。
-        </aside>
+              <div style="margin-top: 20px; display: flex; gap: 12px; align-items: center;">
+                <div style="flex: 1;">
+                  <label class="form-label">导出音频格式:</label>
+                  <select id="format" name="format" class="input-box" style="margin-top: 6px;">
+                    <option value="mp3" selected>MP3 (DJ 专用 320kbps)</option>
+                    <option value="wav">WAV (Uncompressed)</option>
+                    <option value="flac">FLAC (Lossless)</option>
+                    <option value="m4a">M4A (AAC)</option>
+                    <option value="ogg">OGG</option>
+                  </select>
+                </div>
+                <button id="convert" class="btn btn-primary" type="submit" style="margin-top: 24px; padding: 12px 28px;">
+                  ⚡ 极速压制转换
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- 全局状态提示 Drawer -->
+        <div id="status-card" class="status-card">
+          <div id="status-text">就绪</div>
+          <div class="progress-bar-bg">
+            <div id="progress-bar-fill" class="progress-bar-fill"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- 扫码登录 Modal -->
+    <div id="qr-modal" class="modal-backdrop">
+      <div class="modal-card">
+        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary);">网易云 App 扫码登录</h3>
+        <div id="qr-code-box" class="qr-box">正在生成二维码...</div>
+        <p id="qr-status-text" style="font-size: 12px; color: var(--text-secondary);">请打开网易云音乐手机 App 扫描二维码</p>
+
+        <!-- 风控兜底 MUSIC_U 粘贴区 -->
+        <div style="margin-top: 16px; border-top: 1px dashed var(--border-color); padding-top: 14px; text-align: left;">
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">
+            💡 <b>风控兜底</b>：环境受限时，可直接粘贴网易云 <code>MUSIC_U</code> 凭证：
+          </p>
+          <div style="display: flex; gap: 6px;">
+            <input id="input-music-u" type="password" placeholder="粘贴 MUSIC_U 值" class="input-box" style="padding: 6px 10px; font-size: 11px; height: 32px;" />
+            <button id="btn-submit-music-u" class="btn btn-primary btn-sm" style="height: 32px;">确定</button>
+          </div>
+        </div>
+
+        <button id="btn-close-qr" class="btn btn-secondary btn-sm" style="margin-top: 16px; width: 100%;" onclick="window.hideQrModal && window.hideQrModal();">关闭</button>
       </div>
-    </main>
+    </div>
+
     <script src="/ncm-decrypt.js"></script>
     <script src="/qrcode.js"></script>
     <script type="module" src="/app.js"></script>

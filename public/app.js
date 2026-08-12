@@ -1,84 +1,136 @@
+// YesPlayMusic UI Logic & NetEase Exporter Frontend Engine
 const form = document.querySelector("#converter-form");
-const status = document.querySelector("#status");
+const statusCard = document.querySelector("#status-card");
+const statusText = document.querySelector("#status-text");
+const progressBarFill = document.querySelector("#progress-bar-fill");
 const button = document.querySelector("#convert");
 const outputRootInput = document.querySelector("#output-root");
 const btnSelectFolder = document.querySelector("#btn-select-folder");
 const btnLoginQr = document.querySelector("#btn-login-qr");
+const btnLogout = document.querySelector("#btn-logout");
 const qrModal = document.querySelector("#qr-modal");
 const btnCloseQr = document.querySelector("#btn-close-qr");
 const qrCodeBox = document.querySelector("#qr-code-box");
-const userInfoBadge = document.querySelector("#user-info");
 const playlistContainer = document.querySelector("#playlist-list-container");
 const btnCreatePlaylist = document.querySelector("#btn-create-playlist");
+const btnRefreshPlaylists = document.querySelector("#btn-refresh-playlists");
+
+// Tab Navigation Logic
+const navItems = document.querySelectorAll(".nav-item");
+const viewPanels = document.querySelectorAll(".view-panel");
+const headerPageTitle = document.querySelector("#header-page-title");
+
+const tabTitles = {
+  playlists: "云端歌单导出",
+  settings: "导出目录配置",
+  local: "本地单文件转码",
+};
+
+navItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    const targetTab = item.dataset.tab;
+    navItems.forEach((nav) => nav.classList.remove("active"));
+    item.classList.add("active");
+
+    viewPanels.forEach((panel) => {
+      if (panel.id === `tab-${targetTab}`) {
+        panel.classList.add("active");
+      } else {
+        panel.classList.remove("active");
+      }
+    });
+
+    if (headerPageTitle && tabTitles[targetTab]) {
+      headerPageTitle.textContent = tabTitles[targetTab];
+    }
+  });
+});
+
+// User State Management
+const userAvatarImg = document.querySelector("#user-avatar-img");
+const userNameLabel = document.querySelector("#user-name-label");
+const userBadgePill = document.querySelector("#user-badge-pill");
+
 let qrPollTimer = null;
+let currentCookie = localStorage.getItem("netease_cookie") || "";
 
 let mockPlaylists = [
-  { id: "pl_01", name: "House Peak Hour", trackCount: 38 },
-  { id: "pl_02", name: "Techno Basement", trackCount: 24 },
-  { id: "pl_03", name: "Pop Remixes 2026", trackCount: 52 },
+  { id: "pl_01", name: "House Peak Hour", trackCount: 38, coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg" },
+  { id: "pl_02", name: "Techno Basement", trackCount: 24, coverUrl: "https://p2.music.126.net/L3838_0_L7676==/109951165406022568.jpg" },
+  { id: "pl_03", name: "Pop Remixes 2026", trackCount: 52, coverUrl: "https://p1.music.126.net/8888==/109951165406022569.jpg" },
 ];
+
+function setStatusMessage(msg, isProgress = false, progressPercent = 0) {
+  if (!statusCard || !statusText) return;
+  statusCard.classList.add("active");
+  statusText.textContent = msg;
+  if (progressBarFill) {
+    progressBarFill.style.width = isProgress ? `${progressPercent}%` : "100%";
+  }
+}
 
 function renderPlaylists() {
   if (!playlistContainer) return;
   playlistContainer.innerHTML = "";
 
   if (mockPlaylists.length === 0) {
-    playlistContainer.innerHTML = `<div class="empty-tip">暂无歌单，点击上方“+ 新建歌单”进行创建。</div>`;
+    playlistContainer.innerHTML = `
+      <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">
+        暂无歌单，登录后自动展示，或点击右上角“+ 新建歌单”。
+      </div>`;
     return;
   }
 
   mockPlaylists.forEach((pl) => {
     const card = document.createElement("div");
-    card.className = "playlist-item-card";
+    card.className = "playlist-card";
+    const cover = pl.coverUrl || pl.coverImgUrl || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+
     card.innerHTML = `
-      <div>
-        <div class="playlist-name">🎧 ${pl.name}</div>
-        <div class="playlist-count">${pl.trackCount} 首曲目</div>
+      <div class="playlist-cover-wrapper">
+        <img class="playlist-cover-img" src="${cover}" alt="${pl.name}" />
+        <div class="playlist-hover-overlay">
+          <div class="export-overlay-btn btn-export-pl" data-id="${pl.id}" data-name="${pl.name}" title="⚡ 导出此歌单">
+            ⚡
+          </div>
+        </div>
       </div>
-      <div class="playlist-actions">
-        <button class="primary small-btn btn-export-pl" data-id="${pl.id}" data-name="${pl.name}">⚡ 一键导出</button>
-        <button class="small-btn btn-del-pl" data-id="${pl.id}" style="color: #ef4444; border-color: #ef4444;">删除</button>
-      </div>
+      <div class="playlist-name">${pl.name}</div>
+      <div class="playlist-track-count">${pl.trackCount || 0} 首曲目</div>
     `;
     playlistContainer.appendChild(card);
   });
 
   document.querySelectorAll(".btn-export-pl").forEach((btn) => {
-    btn.addEventListener("click", () => exportPlaylist(btn.dataset.id, btn.dataset.name));
-  });
-
-  document.querySelectorAll(".btn-del-pl").forEach((btn) => {
-    btn.addEventListener("click", () => deletePlaylist(btn.dataset.id));
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportPlaylist(btn.dataset.id, btn.dataset.name);
+    });
   });
 }
 
-async function selectNativeDirectory() {
-  if (window.electronAPI && typeof window.electronAPI.selectDirectory === "function") {
-    const selected = await window.electronAPI.selectDirectory();
-    if (selected) {
-      outputRootInput.value = selected;
-    }
-  } else {
-    const typed = prompt("请输入或粘贴导出统一根目录路径：", outputRootInput.value);
-    if (typed) outputRootInput.value = typed;
-  }
-}
-
-const loginStatusBadge = document.querySelector("#login-status-badge");
-const btnLogout = document.querySelector("#btn-logout");
-
-function updateLoginStatusUI(isLoggedIn, userId = "") {
-  if (!loginStatusBadge) return;
-
+function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {
   if (isLoggedIn) {
-    loginStatusBadge.className = "status-badge logged-in";
-    loginStatusBadge.textContent = `🟢 已登录 (${userId ? "ID: " + userId : "网易云账号"})`;
+    if (userNameLabel) userNameLabel.textContent = userDetail?.name || `用户 (${userId})`;
+    if (userBadgePill) {
+      userBadgePill.className = "vip-pill";
+      userBadgePill.textContent = "VIP";
+    }
+    if (userAvatarImg && userDetail?.avatarUrl) {
+      userAvatarImg.src = userDetail.avatarUrl;
+    }
     if (btnLoginQr) btnLoginQr.style.display = "none";
-    if (btnLogout) btnLogout.style.display = "inline-block";
+    if (btnLogout) btnLogout.style.display = "inline-flex";
   } else {
-    loginStatusBadge.className = "status-badge logged-out";
-    loginStatusBadge.textContent = "🔴 未登录 (游客模式)";
-    if (btnLoginQr) btnLoginQr.style.display = "inline-block";
+    if (userNameLabel) userNameLabel.textContent = "未登录 (游客)";
+    if (userBadgePill) {
+      userBadgePill.className = "";
+      userBadgePill.textContent = "Guest";
+    }
+    if (userAvatarImg) {
+      userAvatarImg.src = "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+    }
+    if (btnLoginQr) btnLoginQr.style.display = "inline-flex";
     if (btnLogout) btnLogout.style.display = "none";
   }
 }
@@ -89,13 +141,11 @@ function handleLogout() {
     mockPlaylists = [];
     renderPlaylists();
     updateLoginStatusUI(false);
-    status.textContent = "已退出登录，处于游客模式。";
+    setStatusMessage("已退出登录，处于游客模式。");
   }
 }
 
 if (btnLogout) btnLogout.addEventListener("click", handleLogout);
-
-let currentCookie = localStorage.getItem("netease_cookie") || "";
 
 async function loadUserPlaylists(cookie) {
   if (!cookie) {
@@ -103,22 +153,22 @@ async function loadUserPlaylists(cookie) {
     return;
   }
   try {
-    status.textContent = "正在向网易云服务器获取您的真实歌单列表…";
+    setStatusMessage("正在向网易云服务器获取您的真实歌单列表…", true, 30);
     const res = await fetch(`/api/user/playlists?cookie=${encodeURIComponent(cookie)}`);
     const data = await res.json();
     if (data.code === 200 && Array.isArray(data.playlists)) {
       mockPlaylists = data.playlists;
       renderPlaylists();
       updateLoginStatusUI(true, data.userId);
-      status.textContent = `成功获取到 ${data.playlists.length} 个真实网易云歌单！`;
+      setStatusMessage(`成功获取到 ${data.playlists.length} 个真实网易云歌单！`, true, 100);
     } else {
       updateLoginStatusUI(false);
-      status.textContent = data.message || "登录 Cookie 已过期，请重新扫码。";
+      setStatusMessage(data.message || "登录 Cookie 已过期，请重新扫码。");
       localStorage.removeItem("netease_cookie");
     }
   } catch (err) {
     updateLoginStatusUI(false);
-    status.textContent = "获取真实歌单失败：" + err.message;
+    setStatusMessage("获取真实歌单失败：" + err.message);
   }
 }
 
@@ -127,44 +177,40 @@ function hideQrModal() {
     clearInterval(qrPollTimer);
     qrPollTimer = null;
   }
-  const modal = document.querySelector("#qr-modal");
-  if (modal) {
-    modal.classList.add("hidden");
-    modal.style.display = "none";
-  }
+  if (qrModal) qrModal.classList.remove("active");
 }
 window.hideQrModal = hideQrModal;
 
 function startQrPolling(unikey) {
   if (qrPollTimer) clearInterval(qrPollTimer);
-  const statusText = document.querySelector("#qr-status-text");
+  const statusTextEl = document.querySelector("#qr-status-text");
 
   qrPollTimer = setInterval(async () => {
     try {
       const checkRes = await fetch(`/api/login/qr/check?key=${encodeURIComponent(unikey)}`);
       const checkData = await checkRes.json();
       if (checkData.code === 800) {
-        if (statusText) statusText.textContent = "二维码已过期，请重新打开弹窗刷新";
+        if (statusTextEl) statusTextEl.textContent = "二维码已过期，请重新打开弹窗刷新";
         clearInterval(qrPollTimer);
       } else if (checkData.code === 801) {
-        if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+        if (statusTextEl) statusTextEl.textContent = "请打开网易云音乐手机 App 扫描二维码";
       } else if (checkData.code === 802) {
-        if (statusText) statusText.textContent = "已扫描成功！请在手机上点击“确认登录”";
+        if (statusTextEl) statusTextEl.textContent = "已扫描成功！请在手机上点击“确认登录”";
       } else if (checkData.code === 803) {
-        if (statusText) statusText.textContent = "授权登录成功！正在加载真实歌单...";
+        if (statusTextEl) statusTextEl.textContent = "授权登录成功！正在加载真实歌单...";
         clearInterval(qrPollTimer);
         const userCookie = checkData.cookie || checkData.cookies || `MUSIC_U=${unikey}`;
         localStorage.setItem("netease_cookie", userCookie);
         loadUserPlaylists(userCookie);
         setTimeout(hideQrModal, 1000);
       } else if (checkData.code === 8821) {
-        if (statusText) {
-          statusText.innerHTML = `<span style="color:#f87171; font-weight: bold;">⚠️ 检测到网易云扫码风控限制 (8821)<br/>请在下方框内粘贴浏览器端的 MUSIC_U 直接登录。</span>`;
+        if (statusTextEl) {
+          statusTextEl.innerHTML = `<span style="color:#f87171; font-weight: bold;">⚠️ 检测到网易云扫码风控限制 (8821)<br/>请在下方框内粘贴浏览器端的 MUSIC_U 直接登录。</span>`;
         }
         clearInterval(qrPollTimer);
       }
     } catch (e) {
-      // ignore poll errors
+      // ignore poll error
     }
   }, 2000);
 }
@@ -175,25 +221,21 @@ async function showQrModal() {
     return;
   }
 
-  const modal = document.querySelector("#qr-modal");
-  if (!modal) return;
-  modal.classList.remove("hidden");
-  modal.style.display = "grid";
+  if (!qrModal) return;
+  qrModal.classList.add("active");
 
   const box = document.querySelector("#qr-code-box");
-  const statusText = document.querySelector("#qr-status-text");
+  const statusTextEl = document.querySelector("#qr-status-text");
 
   if (qrPollTimer) clearInterval(qrPollTimer);
 
-  // 1. 立刻瞬间渲染一个合规的标准二维码 (0s 延迟，绝不卡顿在“正在申请”)
   const tempKey = `dj_key_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   const tempUrl = `https://music.163.com/login?codekey=${tempKey}`;
   if (box && window.QRCodeLib && typeof window.QRCodeLib.generateQrSvg === "function") {
     box.innerHTML = window.QRCodeLib.generateQrSvg(tempUrl, 180);
   }
-  if (statusText) statusText.textContent = "请使用网易云音乐手机 App 扫描上方二维码";
+  if (statusTextEl) statusTextEl.textContent = "请打开网易云音乐手机 App 扫描二维码";
 
-  // 2. 异步请求官方 Key 替换并启动轮询
   try {
     const res = await fetch("/api/login/qr/key");
     const data = await res.json();
@@ -208,6 +250,18 @@ async function showQrModal() {
   }
 }
 
+async function selectNativeDirectory() {
+  if (window.electronAPI && typeof window.electronAPI.selectDirectory === "function") {
+    const selected = await window.electronAPI.selectDirectory();
+    if (selected) {
+      outputRootInput.value = selected;
+    }
+  } else {
+    const typed = prompt("请输入导出统一根目录路径：", outputRootInput.value);
+    if (typed) outputRootInput.value = typed;
+  }
+}
+
 function createNewPlaylist() {
   const name = prompt("请输入要新建的歌单名称：", "DJ New Set");
   if (!name || !name.trim()) return;
@@ -215,52 +269,33 @@ function createNewPlaylist() {
     id: `pl_${Date.now()}`,
     name: name.trim(),
     trackCount: 0,
+    coverUrl: "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg"
   });
   renderPlaylists();
-  status.textContent = `已新建歌单「${name.trim()}」。`;
-}
-
-function deletePlaylist(id) {
-  const pl = mockPlaylists.find((p) => p.id === id);
-  if (!pl) return;
-  if (confirm(`确定要从网易云账号删除歌单「${pl.name}」吗？`)) {
-    mockPlaylists = mockPlaylists.filter((p) => p.id !== id);
-    renderPlaylists();
-    status.textContent = `已删除歌单「${pl.name}」。`;
-  }
+  setStatusMessage(`已新建歌单「${name.trim()}」。`);
 }
 
 async function exportPlaylist(id, name) {
   const root = outputRootInput.value || "D:\\DJ_Music_Library";
   const cookie = localStorage.getItem("netease_cookie") || "";
   
-  status.textContent = `正在从网易云服务器拉取并导出歌单「${name}」曲目，请稍候… (正在转换落盘)`;
+  setStatusMessage(`正在从网易云服务器拉取并导出歌单「${name}」曲目，请稍候… (正在转换为 320k MP3)`, true, 45);
   
   try {
     const res = await fetch("/api/playlist/export", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        id,
-        name,
-        outputRoot: root,
-        cookie
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, name, outputRoot: root, cookie })
     });
     
     const data = await res.json();
     if (res.ok && data.code === 200) {
-      status.textContent = `歌单「${name}」批量导出完成！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。已保存到 ${root}\\${name}\\（全部统一为 320k MP3 格式）。`;
-      if (data.failedTracks && data.failedTracks.length > 0) {
-        console.warn("部分歌曲由于版权或VIP限制未能导出：", data.failedTracks);
-      }
+      setStatusMessage(`歌单「${name}」导出成功！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。文件保存在: ${root}\\${name}\\`, true, 100);
     } else {
-      status.textContent = `导出失败：${data.message || "未知错误"}`;
+      setStatusMessage(`导出失败：${data.message || "未知错误"}`);
     }
   } catch (err) {
-    status.textContent = `导出发生异常：${err.message}`;
+    setStatusMessage(`导出发生异常：${err.message}`);
   }
 }
 
@@ -268,6 +303,13 @@ if (btnSelectFolder) btnSelectFolder.addEventListener("click", selectNativeDirec
 if (btnLoginQr) btnLoginQr.addEventListener("click", showQrModal);
 if (btnCloseQr) btnCloseQr.addEventListener("click", hideQrModal);
 if (btnCreatePlaylist) btnCreatePlaylist.addEventListener("click", createNewPlaylist);
+if (btnRefreshPlaylists) {
+  btnRefreshPlaylists.addEventListener("click", () => {
+    const cookie = localStorage.getItem("netease_cookie") || "";
+    if (cookie) loadUserPlaylists(cookie);
+    else renderPlaylists();
+  });
+}
 
 const btnSubmitMusicU = document.querySelector("#btn-submit-music-u");
 const inputMusicU = document.querySelector("#input-music-u");
@@ -288,12 +330,11 @@ function handleManualCookieSubmit() {
 
 if (btnSubmitMusicU) btnSubmitMusicU.addEventListener("click", handleManualCookieSubmit);
 
-// 监听 Electron 主进程传来的扫码登录成功 Cookie 并自动加载歌单
 if (window.electronAPI && typeof window.electronAPI.onCookieCaptured === "function") {
   window.electronAPI.onCookieCaptured((cookieStr) => {
     localStorage.setItem("netease_cookie", cookieStr);
     loadUserPlaylists(cookieStr);
-    status.textContent = "网易云扫码授权成功，已为您全自动登录并加载歌单！";
+    setStatusMessage("网易云扫码授权成功，已为您全自动登录并加载歌单！");
   });
 }
 
@@ -308,7 +349,7 @@ form.addEventListener("submit", async (event) => {
   const fileInput = document.querySelector("#file");
   const file = fileInput.files ? fileInput.files[0] : null;
   if (!file) {
-    status.textContent = "请先选择需要转码/解密的本地音频或 NCM 文件。";
+    setStatusMessage("请先选择需要转码/解密的本地音频或 NCM 文件。");
     return;
   }
 
@@ -319,7 +360,7 @@ form.addEventListener("submit", async (event) => {
     const isNcm = file.name.toLowerCase().endsWith(".ncm");
 
     if (isNcm) {
-      status.textContent = `正在纯前端解密 NCM 文件 ${file.name}…`;
+      setStatusMessage(`正在纯前端解密 NCM 文件 ${file.name}…`, true, 30);
       const arrayBuffer = await file.arrayBuffer();
       const ncmResult = window.decryptNcm(arrayBuffer);
 
@@ -327,7 +368,7 @@ form.addEventListener("submit", async (event) => {
       const decryptedFormat = ncmResult.format;
 
       if (targetFormat === decryptedFormat) {
-        status.textContent = "解密完成，直接在浏览器中下载音频…";
+        setStatusMessage("解密完成，直接在浏览器中下载音频…", true, 100);
         const mimeTypes = { mp3: "audio/mpeg", flac: "audio/flac", wav: "audio/wav", m4a: "audio/mp4", ogg: "audio/ogg" };
         const blob = new Blob([ncmResult.audioBuffer], { type: mimeTypes[decryptedFormat] || "application/octet-stream" });
         const link = document.createElement("a");
@@ -335,11 +376,11 @@ form.addEventListener("submit", async (event) => {
         link.download = `${baseName}.${decryptedFormat}`;
         link.click();
         setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-        status.textContent = `NCM 解密完成 (${decryptedFormat.toUpperCase()})，下载已开始。`;
+        setStatusMessage(`NCM 解密完成 (${decryptedFormat.toUpperCase()})，下载已开始。`, true, 100);
         return;
       }
 
-      status.textContent = `NCM 解密完成，正在本机 FFmpeg 转换为 ${targetFormat.toUpperCase()}…`;
+      setStatusMessage(`NCM 解密完成，正在本机 FFmpeg 转换为 ${targetFormat.toUpperCase()}…`, true, 60);
       const mimeTypes = { mp3: "audio/mpeg", flac: "audio/flac" };
       const decryptedBlob = new Blob([ncmResult.audioBuffer], { type: mimeTypes[decryptedFormat] || "application/octet-stream" });
       const tempFile = new File([decryptedBlob], `${baseName}.${decryptedFormat}`, { type: decryptedBlob.type });
@@ -361,11 +402,11 @@ form.addEventListener("submit", async (event) => {
       link.download = encodedName ? decodeURIComponent(encodedName) : `${baseName}.${targetFormat}`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-      status.textContent = "转换完成，下载已开始。";
+      setStatusMessage("转换完成，下载已开始。", true, 100);
       return;
     }
 
-    status.textContent = `正在本机转换 ${file.name}…`;
+    setStatusMessage(`正在本机转换 ${file.name}…`, true, 50);
     const response = await fetch("/api/convert", { method: "POST", body: new FormData(form) });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
@@ -379,9 +420,9 @@ form.addEventListener("submit", async (event) => {
     link.download = encodedName ? decodeURIComponent(encodedName) : "converted-audio";
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-    status.textContent = "转换完成，下载已开始。";
+    setStatusMessage("转换完成，下载已开始。", true, 100);
   } catch (error) {
-    status.textContent = error.message;
+    setStatusMessage(error.message);
   } finally {
     button.disabled = false;
   }
