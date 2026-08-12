@@ -10,6 +10,7 @@ const qrCodeBox = document.querySelector("#qr-code-box");
 const userInfoBadge = document.querySelector("#user-info");
 const playlistContainer = document.querySelector("#playlist-list-container");
 const btnCreatePlaylist = document.querySelector("#btn-create-playlist");
+let qrPollTimer = null;
 
 let mockPlaylists = [
   { id: "pl_01", name: "House Peak Hour", trackCount: 38 },
