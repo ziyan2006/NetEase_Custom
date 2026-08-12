@@ -357,25 +357,6 @@ export function createAppServer() {
           const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
           const title = track.name;
 
-          const attemptDownloadWithQuality = async (targetBr) => {
-            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url", {
-              params: { ids: JSON.stringify([track.id]), br: targetBr, timestamp: Date.now() },
-              cookie,
-            });
-            const downloadUrl = playerUrlRes?.data?.[0]?.url;
-            if (!downloadUrl) {
-              throw new Error(`无法获取 ${targetBr / 1000}k 音频播放直链`);
-            }
-            await downloadAndExportTrack({
-              outputRoot,
-              playlistName: name,
-              artist,
-              title,
-              downloadUrl,
-              cookie,
-            });
-          };
-
           try {
             // 首先尝试使用批量获取的初始直链（320k 最高画质/音质）
             if (initialUrl) {
@@ -391,22 +372,23 @@ export function createAppServer() {
                 successTracks.push({ title, artist });
                 continue;
               } catch (errInitial) {
-                console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试降级 192k: ${artist} - ${title}`, errInitial.message);
+                console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试官方通用外链: ${artist} - ${title}`, errInitial.message);
               }
             } else {
-              // 若批量获取中无直链，直接降级尝试 192k
-              console.warn(`[DOWNLOAD FALLBACK] 初始直链缺失，尝试降级 192k: ${artist} - ${title}`);
+              console.warn(`[DOWNLOAD FALLBACK] 初始直链缺失，尝试官方通用外链: ${artist} - ${title}`);
             }
 
-            // 降级链尝试：192k -> 128k
-            try {
-              await attemptDownloadWithQuality(192000);
-              successTracks.push({ title, artist });
-            } catch (err192) {
-              console.warn(`[DOWNLOAD FALLBACK] 192k 降级下载失败，尝试最终降级 128k: ${artist} - ${title}`, err192.message);
-              await attemptDownloadWithQuality(128000);
-              successTracks.push({ title, artist });
-            }
+            // 降级使用网易云官方嵌入式通用外链接口（极高稳定性直连，自动跟随 302 重定向）
+            const outerUrl = `https://music.163.com/song/media/outer/url?id=${track.id}.mp3`;
+            await downloadAndExportTrack({
+              outputRoot,
+              playlistName: name,
+              artist,
+              title,
+              downloadUrl: outerUrl,
+              cookie,
+            });
+            successTracks.push({ title, artist });
           } catch (err) {
             console.error(`导出曲目最终失败: ${artist} - ${title}`, err);
             failedTracks.push({ title, artist, reason: err.message });
