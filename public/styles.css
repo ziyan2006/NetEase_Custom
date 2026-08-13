@@ -552,6 +552,26 @@ select.input-box option {
   color: var(--text-muted);
 }
 
+/* 已选择文件与拖拽悬停状态 */
+.dropzone-box.has-file {
+  border-color: var(--brand-red);
+  background: rgba(234, 68, 83, 0.06);
+}
+
+.dropzone-box.drag-over {
+  border-color: var(--brand-red);
+  background: rgba(234, 68, 83, 0.1);
+  transform: scale(1.01);
+}
+
+.dropzone-file-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-red);
+  word-break: break-all;
+  max-width: 100%;
+}
+
 /* Modal Styles */
 .modal-backdrop {
   position: fixed;

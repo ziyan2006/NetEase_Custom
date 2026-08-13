@@ -1045,17 +1045,30 @@ if (currentCookie) {
   renderPlaylists();
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const fileInput = document.querySelector("#file");
-  const file = fileInput.files ? fileInput.files[0] : null;
+// ============ 单文件转码 / NCM 解密 ============
+const fileInput = document.querySelector("#file");
+const dropzoneBox = document.querySelector(".dropzone-box");
+const dropzoneFileName = document.querySelector("#dropzone-file-name");
+
+function showSelectedFile(file) {
+  if (!file) return;
+  if (dropzoneFileName) {
+    dropzoneFileName.style.display = "block";
+    dropzoneFileName.textContent = `📄 ${file.name} (${formatBytes(file.size)})`;
+  }
+  if (dropzoneBox) dropzoneBox.classList.add("has-file");
+}
+
+async function runFileConversion(file) {
   if (!file) {
     setStatusMessage("请先选择需要转码/解密的本地音频或 NCM 文件。");
     return;
   }
+  // 防止“选择后自动开始”与“手动点击按钮”重复触发
+  if (button && button.disabled) return;
 
   const targetFormat = document.querySelector("#format").value;
-  button.disabled = true;
+  if (button) button.disabled = true;
 
   showProgressModal(`🎵 正在处理 ${file.name}...`, `正在纯前端解密/转码为 ${targetFormat.toUpperCase()} 音频...`);
   updateProgressModal(25, `读取文件特征并校验魔数头部...`);
@@ -1135,7 +1148,46 @@ form.addEventListener("submit", async (event) => {
     updateProgressModal(100, `处理异常: ${error.message}`);
     setStatusMessage(error.message);
   } finally {
-    button.disabled = false;
+    if (button) button.disabled = false;
     setTimeout(hideProgressModal, 1000);
   }
+}
+
+// 选择文件后即时显示文件名并自动开始转换
+if (fileInput) {
+  fileInput.addEventListener("change", (e) => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    showSelectedFile(file);
+    void runFileConversion(file);
+  });
+}
+
+// 拖拽选择文件（与 dropzone 提示文案保持一致）
+if (dropzoneBox) {
+  ["dragenter", "dragover"].forEach((evtName) => {
+    dropzoneBox.addEventListener(evtName, (e) => {
+      e.preventDefault();
+      dropzoneBox.classList.add("drag-over");
+    });
+  });
+  ["dragleave", "drop"].forEach((evtName) => {
+    dropzoneBox.addEventListener(evtName, (e) => {
+      e.preventDefault();
+      dropzoneBox.classList.remove("drag-over");
+    });
+  });
+  dropzoneBox.addEventListener("drop", (e) => {
+    const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    showSelectedFile(file);
+    void runFileConversion(file);
+  });
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const inputEl = document.querySelector("#file");
+  const file = inputEl.files ? inputEl.files[0] : null;
+  void runFileConversion(file);
 });
