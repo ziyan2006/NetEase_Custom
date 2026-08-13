@@ -504,6 +504,17 @@ body {
   box-shadow: 0 0 0 3px rgba(234, 68, 83, 0.15);
 }
 
+/* 原生下拉框暗色适配：点击后弹出的选项列表不再白底白字 */
+select.input-box {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+select.input-box option {
+  background-color: #18181f;
+  color: #ffffff;
+}
+
 /* Local File Dropzone */
 .dropzone-box {
   border: 2px dashed rgba(255, 255, 255, 0.15);
