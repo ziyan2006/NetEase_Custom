@@ -180,6 +180,183 @@ async function serveStatic(request, response) {
 
 import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse } from "./lib/netease-api.js";
 
+// ---------- SSE 流式导出工具 ----------
+
+function writeSseEvent(response, payload) {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+// 总进度 = 直链获取阶段占 0-10%，逐曲下载阶段占 10-100%
+function overallFor(completedTracks, currentFraction, total) {
+  if (!total) return 0;
+  return Math.min(100, 10 + 90 * ((completedTracks + currentFraction) / total));
+}
+
+function readJsonBody(request) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    request.on("data", (chunk) => chunks.push(chunk));
+    request.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    request.on("error", reject);
+  });
+}
+
+/**
+ * 执行歌单批量导出，通过 emit(event) 实时推送进度事件：
+ *  start {type,total,playlistName,overall} | urls {type,done,total,overall}
+ *  track {type,index,total,title,artist,overall} | progress {type,index,title,artist,downloaded,totalBytes,percent,speedBytesPerSec,phase,overall}
+ *  track-done {type,index,title,artist,overall} | track-fail {type,index,title,artist,reason,overall}
+ *  done {type,code,message,successCount,failedCount,successTracks,failedTracks,overall}
+ */
+async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) {
+  console.log(`[EXPORT PLAYLIST] Starting export for: ${name} (ID: ${id}) to: ${outputRoot}`);
+
+  // 1. 获取歌单内曲目 ID 与基本信息
+  const playlistRes = await fetchNetEaseApi("/v6/playlist/detail", {
+    params: { id, n: 1000, timestamp: Date.now() },
+    cookie,
+  });
+
+  const tracks = playlistRes?.playlist?.tracks || [];
+  if (tracks.length === 0) {
+    const emptySummary = { code: 200, message: "歌单内无任何歌曲", successCount: 0, failedCount: 0, successTracks: [], failedTracks: [] };
+    emit({ type: "done", ...emptySummary, overall: 100 });
+    return emptySummary;
+  }
+
+  emit({ type: "start", total: tracks.length, playlistName: name, overall: 0 });
+
+  // 2. 批量分段查询歌曲下载链接，规避参数长度限制
+  const batchSize = 50;
+  const songUrlsMap = new Map();
+  const batchCount = Math.ceil(tracks.length / batchSize);
+
+  for (let i = 0; i < tracks.length; i += batchSize) {
+    const batchTracks = tracks.slice(i, i + batchSize);
+    const ids = batchTracks.map(t => t.id);
+    const batchIndex = i / batchSize + 1;
+    try {
+      const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url/v1", {
+        method: "POST",
+        body: {
+          ids: `[${ids.join(",")}]`,
+          level: "exhigh",
+          encodeType: "flac",
+        },
+        cookie,
+      });
+      const urlList = playerUrlRes?.data || [];
+      urlList.forEach((item) => {
+        if (item.url) {
+          songUrlsMap.set(item.id, item.url);
+        }
+      });
+    } catch (e) {
+      console.error(`获取歌曲 URL 批次失败: `, e);
+    }
+    emit({ type: "urls", done: batchIndex, total: batchCount, overall: 10 * (batchIndex / batchCount) });
+  }
+
+  // 3. 循环下载、解密 NCM 并进行 MP3 转码压制
+  const successTracks = [];
+  const failedTracks = [];
+  let successCount = 0;
+  let failedCount = 0;
+
+  for (let t = 0; t < tracks.length; t++) {
+    const track = tracks[t];
+    const index = t + 1;
+    const initialUrl = songUrlsMap.get(track.id);
+    const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
+    const title = track.name;
+
+    emit({ type: "track", index, total: tracks.length, title, artist, overall: overallFor(t, 0, tracks.length) });
+
+    // 单曲下载速度统计（基于相邻进度事件的字节差/时间差）
+    let lastBytes = 0;
+    let lastTime = Date.now();
+    let speedBytesPerSec = 0;
+
+    const onProgress = ({ downloaded, totalBytes, percent, phase }) => {
+      const now = Date.now();
+      const deltaBytes = downloaded - lastBytes;
+      const deltaMs = now - lastTime;
+      if (deltaBytes > 0 && deltaMs > 0) {
+        speedBytesPerSec = Math.round((deltaBytes / deltaMs) * 1000);
+      }
+      lastBytes = downloaded;
+      lastTime = now;
+      emit({
+        type: "progress",
+        index, title, artist,
+        downloaded,
+        totalBytes,
+        percent: Math.min(100, percent || 0),
+        speedBytesPerSec,
+        phase: phase || "downloading",
+        overall: overallFor(t, Math.min(100, percent || 0) / 100, tracks.length),
+      });
+    };
+
+    try {
+      // 首先尝试使用批量获取的初始直链（320k 最高画质/音质）
+      if (initialUrl) {
+        try {
+          await downloadAndExportTrack({
+            outputRoot,
+            playlistName: name,
+            artist,
+            title,
+            downloadUrl: initialUrl,
+            cookie,
+            onProgress,
+          });
+          successCount++;
+          successTracks.push({ title, artist });
+          emit({ type: "track-done", index, title, artist, overall: overallFor(index, 0, tracks.length) });
+          continue;
+        } catch (errInitial) {
+          console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试官方通用外链: ${artist} - ${title}`, errInitial.message);
+        }
+      } else {
+        console.warn(`[DOWNLOAD FALLBACK] 初始直链缺失，尝试官方通用外链: ${artist} - ${title}`);
+      }
+
+      // 2. 降级使用网易云官方嵌入式通用外链接口
+      const outerUrl = `https://music.163.com/song/media/outer/url?id=${track.id}.mp3`;
+      await downloadAndExportTrack({
+        outputRoot,
+        playlistName: name,
+        artist,
+        title,
+        downloadUrl: outerUrl,
+        cookie,
+        onProgress,
+      });
+      successCount++;
+      successTracks.push({ title, artist });
+      emit({ type: "track-done", index, title, artist, overall: overallFor(index, 0, tracks.length) });
+    } catch (err) {
+      console.error(`导出曲目最终失败: ${artist} - ${title}`, err);
+      failedCount++;
+      failedTracks.push({ title, artist, reason: err.message });
+      emit({ type: "track-fail", index, title, artist, reason: err.message, overall: overallFor(index, 0, tracks.length) });
+    }
+  }
+
+  console.log(`[EXPORT PLAYLIST] Done: ${name}. Success: ${successCount}, Failed: ${failedCount}`);
+  const summary = {
+    code: 200,
+    message: "歌单批量导出完成！",
+    successCount,
+    failedCount,
+    successTracks,
+    failedTracks,
+  };
+  emit({ type: "done", ...summary, overall: 100 });
+  return summary;
+}
+
 async function runDiagnostic() {
   console.log("[DIAGNOSTIC] Running NetEase CDN download test...");
   try {
@@ -446,13 +623,7 @@ export function createAppServer() {
 
     if (request.method === "POST" && urlObj.pathname === "/api/playlist/export") {
       try {
-        const bodyStr = await new Promise((resolveResolve, rejectReject) => {
-          let chunks = [];
-          request.on("data", (chunk) => chunks.push(chunk));
-          request.on("end", () => resolveResolve(Buffer.concat(chunks).toString("utf8")));
-          request.on("error", rejectReject);
-        });
-
+        const bodyStr = await readJsonBody(request);
         const params = JSON.parse(bodyStr);
         const { id, name, outputRoot, cookie } = params;
 
@@ -461,105 +632,34 @@ export function createAppServer() {
           return;
         }
 
-        console.log(`[EXPORT PLAYLIST] Starting export for: ${name} (ID: ${id}) to: ${outputRoot}`);
+        const wantsStream = (request.headers.accept || "").includes("text/event-stream");
 
-        // 1. 获取歌单内曲目 ID 与基本信息
-        const playlistRes = await fetchNetEaseApi("/v6/playlist/detail", {
-          params: { id, n: 1000, timestamp: Date.now() },
-          cookie,
-        });
-
-        const tracks = playlistRes?.playlist?.tracks || [];
-        if (tracks.length === 0) {
-          sendJson(response, 200, { code: 200, message: "歌单内无任何歌曲", successCount: 0, failedCount: 0 });
+        if (!wantsStream) {
+          // 非流式兼容：返回一次性 JSON 摘要
+          const events = [];
+          await exportPlaylistWithEvents({ id, name, outputRoot, cookie }, (evt) => events.push(evt));
+          const doneEvt = events.find((e) => e.type === "done");
+          sendJson(response, 200, doneEvt || { code: 500, message: "导出未完成" });
           return;
         }
 
-        const successTracks = [];
-        const failedTracks = [];
-
-        // 2. 批量分段查询歌曲下载链接，规避参数长度限制
-        const batchSize = 50;
-        const songUrlsMap = new Map();
-
-        for (let i = 0; i < tracks.length; i += batchSize) {
-          const batchTracks = tracks.slice(i, i + batchSize);
-          const ids = batchTracks.map(t => t.id);
-          try {
-            const playerUrlRes = await fetchNetEaseApi("/song/enhance/player/url/v1", {
-              method: "POST",
-              body: {
-                ids: `[${ids.join(",")}]`,
-                level: "exhigh",
-                encodeType: "flac",
-              },
-              cookie,
-            });
-            const urlList = playerUrlRes?.data || [];
-            urlList.forEach((item) => {
-              if (item.url) {
-                songUrlsMap.set(item.id, item.url);
-              }
-            });
-          } catch (e) {
-            console.error(`获取歌曲 URL 批次失败: `, e);
-          }
-        }
-
-        // 3. 循环下载、解密 NCM 并进行 MP3 转码压制
-        for (const track of tracks) {
-          const initialUrl = songUrlsMap.get(track.id);
-          const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
-          const title = track.name;
-
-          try {
-            // 首先尝试使用批量获取的初始直链（320k 最高画质/音质）
-            if (initialUrl) {
-              try {
-                await downloadAndExportTrack({
-                  outputRoot,
-                  playlistName: name,
-                  artist,
-                  title,
-                  downloadUrl: initialUrl,
-                  cookie,
-                });
-                successTracks.push({ title, artist });
-                continue;
-              } catch (errInitial) {
-                console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试官方通用外链: ${artist} - ${title}`, errInitial.message);
-              }
-            } else {
-              console.warn(`[DOWNLOAD FALLBACK] 初始直链缺失，尝试官方通用外链: ${artist} - ${title}`);
-            }
-
-            // 2. 降级使用网易云官方嵌入式通用外链接口
-            const outerUrl = `https://music.163.com/song/media/outer/url?id=${track.id}.mp3`;
-            await downloadAndExportTrack({
-              outputRoot,
-              playlistName: name,
-              artist,
-              title,
-              downloadUrl: outerUrl,
-              cookie,
-            });
-            successTracks.push({ title, artist });
-          } catch (err) {
-            console.error(`导出曲目最终失败: ${artist} - ${title}`, err);
-            failedTracks.push({ title, artist, reason: err.message });
-          }
-        }
-
-        console.log(`[EXPORT PLAYLIST] Done: ${name}. Success: ${successTracks.length}, Failed: ${failedTracks.length}`);
-        sendJson(response, 200, {
-          code: 200,
-          message: "歌单批量导出完成！",
-          successCount: successTracks.length,
-          failedCount: failedTracks.length,
-          successTracks,
-          failedTracks,
+        // SSE 流式导出：实时推送每首歌的下载进度事件
+        response.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
         });
+        response.write("retry: 1000\n\n");
 
+        try {
+          await exportPlaylistWithEvents({ id, name, outputRoot, cookie }, (evt) => writeSseEvent(response, evt));
+        } catch (err) {
+          console.error("歌单导出异常", err);
+          writeSseEvent(response, { type: "error", message: "批量导出发生异常: " + err.message });
+        } finally {
+          response.end();
+        }
       } catch (err) {
         console.error("歌单导出异常", err);
         sendJson(response, 500, { message: "批量导出发生异常: " + err.message });

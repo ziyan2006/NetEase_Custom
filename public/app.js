@@ -80,6 +80,24 @@ const modalProgressTitle = document.querySelector("#modal-progress-title");
 const modalProgressSubtitle = document.querySelector("#modal-progress-subtitle");
 const modalProgressFill = document.querySelector("#modal-progress-fill");
 const modalProgressPercent = document.querySelector("#modal-progress-percent");
+const modalProgressTrack = document.querySelector("#modal-progress-track");
+const modalProgressTrackFill = document.querySelector("#modal-progress-track-fill");
+const modalProgressDetail = document.querySelector("#modal-progress-detail");
+const modalProgressCounts = document.querySelector("#modal-progress-counts");
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  let v = bytes;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return (v >= 100 ? Math.round(v) : v.toFixed(1)) + " " + units[i];
+}
+
+function formatSpeed(bps) {
+  if (!bps || bps <= 0) return "\u2014";
+  return formatBytes(bps) + "/s";
+}
 
 function showProgressModal(title, subtitle = "正在从网易云提取音频流并进行 MP3 无损处理...") {
   if (!exportProgressModal) return;
@@ -87,6 +105,10 @@ function showProgressModal(title, subtitle = "正在从网易云提取音频流�
   if (modalProgressSubtitle) modalProgressSubtitle.textContent = subtitle;
   if (modalProgressFill) modalProgressFill.style.width = "0%";
   if (modalProgressPercent) modalProgressPercent.textContent = "0%";
+  if (modalProgressTrack) modalProgressTrack.textContent = "🎵 准备中...";
+  if (modalProgressTrackFill) modalProgressTrackFill.style.width = "0%";
+  if (modalProgressDetail) modalProgressDetail.textContent = "—";
+  if (modalProgressCounts) modalProgressCounts.textContent = "✅ 成功 0 · ⏳ 剩余 0 · ❌ 失败 0";
   exportProgressModal.classList.add("active");
 }
 
@@ -455,26 +477,114 @@ async function handleConfirmCreatePlaylist() {
 async function exportPlaylist(id, name) {
   const root = outputRootInput.value || "D:\\DJ_Music_Library";
   const cookie = localStorage.getItem("netease_cookie") || "";
-  
-  showProgressModal(`⚡ 正在导出歌单「${name}」...`, `正在向网易云服务端校验 VIP 账号身份与歌单曲目数据...`);
-  updateProgressModal(25, `从网易云获取 320k 极高音质直链中...`);
-  setStatusMessage(`正在导出歌单「${name}」曲目，请稍候…`, true, 25);
-  
+
+  let exportTotal = 0;
+  let exportSuccess = 0;
+  let exportFail = 0;
+
+  showProgressModal(`⚡ 正在导出歌单「${name}」...`, `正在连接网易云服务端并校验账号身份...`);
+  setStatusMessage(`正在导出歌单「${name}」曲目，请稍候…`, true, 5);
+
+  const applyCounts = () => {
+    if (!modalProgressCounts) return;
+    const remain = exportTotal ? Math.max(0, exportTotal - exportSuccess - exportFail) : 0;
+    modalProgressCounts.textContent = `✅ 成功 ${exportSuccess} · ⏳ 剩余 ${remain} · ❌ 失败 ${exportFail}`;
+  };
+
+  // SSE 事件 -> UI 实时渲染
+  const onExportEvent = (evt) => {
+    switch (evt.type) {
+      case "start":
+        exportTotal = evt.total || 0;
+        applyCounts();
+        updateProgressModal(0, `共 ${exportTotal} 首歌曲，正在获取 320k 极高音质直链...`);
+        break;
+      case "urls":
+        updateProgressModal(evt.overall ?? 0, `正在获取 320k 直链 (批次 ${evt.done}/${evt.total})...`);
+        break;
+      case "track":
+        if (modalProgressTrack) modalProgressTrack.textContent = `🎵 (${evt.index}/${evt.total}) ${evt.title} - ${evt.artist}`;
+        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "0%";
+        if (modalProgressDetail) modalProgressDetail.textContent = "⏳ 正在建立下载连接...";
+        updateProgressModal(evt.overall ?? 0, `正在下载第 ${evt.index}/${evt.total} 首: ${evt.title} - ${evt.artist}`);
+        break;
+      case "progress":
+        if (modalProgressTrackFill) modalProgressTrackFill.style.width = `${Math.min(100, evt.percent)}%`;
+        if (modalProgressDetail) {
+          modalProgressDetail.textContent = evt.phase === "processing"
+            ? "✅ 下载完成，正在 NCM 解密 / FFmpeg 320k MP3 压盘..."
+            : `已下载 ${formatBytes(evt.downloaded)} / ${evt.totalBytes ? formatBytes(evt.totalBytes) : "未知"} · ${formatSpeed(evt.speedBytesPerSec)}`;
+        }
+        updateProgressModal(evt.overall ?? 0, `正在下载第 ${evt.index}/${evt.total} 首: ${evt.title} - ${evt.artist}`);
+        break;
+      case "track-done":
+        exportSuccess++;
+        applyCounts();
+        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "100%";
+        if (modalProgressDetail) modalProgressDetail.textContent = "✅ 下载与转码完成";
+        updateProgressModal(evt.overall ?? 0, `已完成 ${evt.index}/${evt.total} 首，继续下一首...`);
+        break;
+      case "track-fail":
+        exportFail++;
+        applyCounts();
+        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "100%";
+        if (modalProgressDetail) modalProgressDetail.textContent = `❌ 失败: ${evt.reason || "未知原因"}`;
+        updateProgressModal(evt.overall ?? 0, `第 ${evt.index}/${evt.total} 首下载失败，继续导出中...`);
+        break;
+      case "done":
+        updateProgressModal(100, evt.message || "导出完成！");
+        if (modalProgressTrack) modalProgressTrack.textContent = `🎵 全部处理完毕 · 成功 ${evt.successCount} · 失败 ${evt.failedCount}`;
+        setStatusMessage(`歌单「${name}」导出完成！成功: ${evt.successCount} 首，失败: ${evt.failedCount} 首。文件保存在: ${root}\\${name}\\`, true, 100);
+        break;
+      case "error":
+        updateProgressModal(100, `导出失败：${evt.message || "未知错误"}`);
+        setStatusMessage(`导出失败：${evt.message || "未知错误"}`);
+        break;
+    }
+  };
+
   try {
-    updateProgressModal(50, `正在进行 NCM 解密与 FFmpeg 高品质 320k MP3 压制压盘...`);
     const res = await fetch("/api/playlist/export", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
       body: JSON.stringify({ id, name, outputRoot: root, cookie })
     });
-    
-    const data = await res.json();
-    if (res.ok && data.code === 200) {
-      updateProgressModal(100, `歌单导出完成！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。`);
-      setStatusMessage(`歌单「${name}」导出成功！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。文件保存在: ${root}\\${name}\\`, true, 100);
-    } else {
-      updateProgressModal(100, `导出失败：${data.message || "未知错误"}`);
-      setStatusMessage(`导出失败：${data.message || "未知错误"}`);
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("text/event-stream")) {
+      // 后端未启用流式（如旧版本），退化为一次性 JSON 摘要
+      const data = await res.json().catch(() => null);
+      if (data && data.code === 200) {
+        updateProgressModal(100, `歌单导出完成！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。`);
+        setStatusMessage(`歌单「${name}」导出成功！成功: ${data.successCount} 首，失败: ${data.failedCount} 首。文件保存在: ${root}\\${name}\\`, true, 100);
+      } else {
+        updateProgressModal(100, `导出失败：${data?.message || "未知错误"}`);
+        setStatusMessage(`导出失败：${data?.message || "未知错误"}`);
+      }
+      return;
+    }
+
+    // 流式读取 SSE 事件并实时更新进度弹窗
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep;
+      while ((sep = buffer.indexOf("\n\n")) >= 0) {
+        const raw = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        for (const line of raw.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+          try {
+            onExportEvent(JSON.parse(payload));
+          } catch { /* 忽略无法解析的帧 */ }
+        }
+      }
     }
   } catch (err) {
     updateProgressModal(100, `导出异常：${err.message}`);

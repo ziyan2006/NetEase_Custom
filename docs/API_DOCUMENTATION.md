@@ -209,8 +209,9 @@ Cookie: MUSIC_U=YOUR_MUSIC_U_TOKEN; os=pc; appver=2.9.7.199895; osver=10.0.19041
 
 ## 7. 歌单批量导出与转码处理 API
 
-### 7.1 一键导出歌单为本地 DJ 音频库
+### 7.1 一键导出歌单为本地 DJ 音频库（SSE 实时进度）
 - **后端路由**: `POST /api/playlist/export`
+- **请求 Header**: 请求头携带 `Accept: text/event-stream` 时，后端以 **SSE（Server-Sent Events）** 流式推送逐曲下载进度；不携带则返回一次性 JSON 摘要（兼容旧调用方）。
 - **请求 Body**:
 ```json
 {
@@ -222,8 +223,23 @@ Cookie: MUSIC_U=YOUR_MUSIC_U_TOKEN; os=pc; appver=2.9.7.199895; osver=10.0.19041
 ```
 - **核心流程**:
   1. 向网易云 V1 接口批量分段获取 320k 直链。
-  2. 携带 PC Cookie 下载音频流。
-  3. 若遭遇嵌入式 NCM 加密，调用 WebAssembly 解密核心。
+  2. 携带 PC Cookie 流式下载音频流（按字节推送真实进度）。
+  3. 若遭遇嵌入式 NCM 加密，调用解密核心。
   4. 调用本机 FFmpeg 压制转换为 320kbps 标准 MP3 格式。
   5. 注入 ID3v2 元数据标签（歌名、歌手名、高清唱片封面）。
   6. 落盘至 `D:\DJ_Music_Library\dnb rap\歌手 - 歌名.mp3`。
+
+- **SSE 事件协议**（每帧为 `data: {json}\n\n`）：
+
+| 事件类型 | 触发时机 | 关键字段 |
+|---|---|---|
+| `start` | 开始导出 | `total`(总曲数)、`playlistName`、`overall` |
+| `urls` | 每批直链获取完成 | `done`/`total`(批次)、`overall` |
+| `track` | 每首歌开始下载 | `index`/`total`、`title`、`artist`、`overall` |
+| `progress` | 下载过程中按字节推送 | `downloaded`、`totalBytes`、`percent`(单曲 0-100)、`speedBytesPerSec`、`phase`(`downloading`/`processing`)、`overall` |
+| `track-done` | 单曲成功 | `index`、`title`、`artist`、`overall` |
+| `track-fail` | 单曲失败 | `index`、`title`、`artist`、`reason`、`overall` |
+| `done` | 全部完成 | `successCount`、`failedCount`、`successTracks`、`failedTracks`、`overall`=100 |
+| `error` | 导出异常 | `message` |
+
+- **总进度换算**：直链获取阶段占 `overall` 0-10%，逐曲下载阶段占 10-100%（`overall = 10 + 90 × (已完成曲数 + 当前曲进度) / 总曲数`）。

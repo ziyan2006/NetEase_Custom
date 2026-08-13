@@ -628,6 +628,48 @@ body {
   border-radius: var(--radius-full);
 }
 
+/* Realtime export progress: current track, per-track bar, size/speed, counts */
+.progress-track-line {
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-top: 16px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-bar-bg {
+  height: 4px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.track-bar-fill {
+  background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+  transition: width 0.2s ease;
+}
+
+.progress-detail-line {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.progress-counts-line {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Top-Most Progress Overlay Modal (Blocking Duplicate Actions) */
 .top-most-modal {
   z-index: 9999 !important;

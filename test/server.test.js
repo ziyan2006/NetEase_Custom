@@ -109,3 +109,89 @@ test("serves the local conversion page", async () => {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
+
+test("streams realtime progress events while exporting a playlist (SSE)", async () => {
+  const originalFetch = globalThis.fetch;
+  const mp3Bytes = Uint8Array.from([0x49, 0x44, 0x33, 0, 0, 0, 0, 0, 0, 0]);
+
+  // 桩替所有上游请求：歌单详情 / 播放直链 / 音频下载（本地服务请求放行）
+  globalThis.fetch = async (url, options) => {
+    const urlStr = String(url);
+    if (urlStr.startsWith("http://127.0.0.1")) {
+      return originalFetch(url, options);
+    }
+    if (urlStr.includes("/api/v6/playlist/detail")) {
+      return new Response(JSON.stringify({
+        code: 200,
+        playlist: {
+          name: "Test PL",
+          tracks: [
+            { id: 1001, name: "Song One", ar: [{ name: "Artist A" }] },
+            { id: 1002, name: "Song Two", ar: [{ name: "Artist B" }] },
+          ],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr.includes("/api/song/enhance/player/url/v1")) {
+      return new Response(JSON.stringify({
+        code: 200,
+        data: [
+          { id: 1001, url: "http://fake-cdn.local/1.mp3" },
+          { id: 1002, url: "http://fake-cdn.local/2.mp3" },
+        ],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr.startsWith("http://fake-cdn.local/")) {
+      return new Response(new Blob([mp3Bytes]), {
+        status: 200,
+        headers: { "content-type": "audio/mpeg" },
+      });
+    }
+    return new Response(JSON.stringify({ code: 200 }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  const server = createAppServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const response = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify({ id: "123", name: "Test PL", outputRoot: "./test_export_temp", cookie: "MUSIC_U=x" }),
+    });
+
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /text\/event-stream/);
+
+    const body = await response.text();
+    const events = body
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice(5).trim()));
+
+    const types = events.map((e) => e.type);
+    assert.equal(types[0], "start");
+    assert.equal(events[0].total, 2);
+    assert.ok(types.includes("urls"));
+    assert.ok(types.includes("track"));
+    assert.ok(types.includes("progress"));
+    assert.ok(types.includes("track-done"));
+    assert.equal(types[types.length - 1], "done");
+
+    const doneEvt = events[events.length - 1];
+    assert.equal(doneEvt.successCount, 2);
+    assert.equal(doneEvt.failedCount, 0);
+    assert.equal(doneEvt.overall, 100);
+
+    const progressEvts = events.filter((e) => e.type === "progress");
+    assert.ok(progressEvts.length >= 2, "should emit per-track progress events");
+    assert.ok(progressEvts.every((e) => e.speedBytesPerSec >= 0));
+    assert.equal(progressEvts[progressEvts.length - 1].percent, 100);
+  } finally {
+    globalThis.fetch = originalFetch;
+    const fs = await import("node:fs/promises");
+    await fs.rm("./test_export_temp", { recursive: true, force: true }).catch(() => null);
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});

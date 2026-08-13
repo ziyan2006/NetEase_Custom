@@ -11,14 +11,15 @@ test("resolvePlaylistOutputPath creates subfolder under root directory", () => {
 test("downloadAndExportTrack conditionally sends Cookie header only to music.163.com", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
+  const progressEvents = [];
 
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
-    return {
-      ok: true,
-      headers: new Map([["content-type", "audio/mpeg"]]),
-      arrayBuffer: async () => Uint8Array.from([0x49, 0x44, 0x33, 0, 0, 0, 0, 0, 0, 0]).buffer,
-    };
+    const mp3Bytes = Uint8Array.from([0x49, 0x44, 0x33, 0, 0, 0, 0, 0, 0, 0]);
+    return new Response(new Blob([mp3Bytes]), {
+      status: 200,
+      headers: { "content-type": "audio/mpeg" },
+    });
   };
 
   try {
@@ -30,7 +31,15 @@ test("downloadAndExportTrack conditionally sends Cookie header only to music.163
       title: "Title1",
       downloadUrl: "https://music.163.com/song/media/outer/url?id=1.mp3",
       cookie: "MUSIC_U=test_token",
+      onProgress: (p) => progressEvents.push(p),
     });
+
+    // 流式读取应按字节推送真实进度：最终 100%，字节数与文件大小一致
+    assert.ok(progressEvents.length >= 1, "onProgress should be called at least once");
+    const lastProgress = progressEvents[progressEvents.length - 1];
+    assert.equal(lastProgress.percent, 100);
+    assert.equal(lastProgress.downloaded, 10);
+    assert.equal(lastProgress.phase, "processing");
 
     // Case 2: 126.net 应该不带 Cookie
     await downloadAndExportTrack({
