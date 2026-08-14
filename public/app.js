@@ -1216,3 +1216,16 @@ form.addEventListener("submit", (event) => {
   const file = inputEl.files ? inputEl.files[0] : null;
   void runFileConversion(file);
 });
+
+// Expose global methods for Copilot interaction
+window.getNeteaseCookie = () => localStorage.getItem("netease_cookie") || "";
+window.showQrModal = showQrModal;
+window.addLocalPlaylist = (pl) => {
+  mockPlaylists.unshift(pl);
+  renderPlaylists();
+};
+window.refreshPlaylists = () => {
+  const cookie = localStorage.getItem("netease_cookie") || "";
+  if (cookie) loadUserPlaylists(cookie);
+  else renderPlaylists();
+};

@@ -184,7 +184,7 @@ async function serveStatic(request, response) {
   }
 }
 
-import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse } from "./lib/netease-api.js";
+import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse, sanitizePlaylistName } from "./lib/netease-api.js";
 
 // ---------- SSE 流式导出工具 ----------
 
@@ -487,13 +487,14 @@ export function createAppServer() {
         });
         const params = JSON.parse(bodyStr);
         const { name, privacy = 0, cookie } = params;
-        if (!name || !name.trim()) {
+        const safeName = sanitizePlaylistName(name);
+        if (!safeName) {
           sendJson(response, 400, { message: "歌单名称不能为空" });
           return;
         }
         const resData = await fetchNetEaseApi("/playlist/create", {
           method: "POST",
-          body: { name: name.trim(), privacy: privacy.toString() },
+          body: { name: safeName, privacy: privacy.toString(), type: "NORMAL" },
           cookie,
         });
         sendJson(response, 200, resData);
@@ -813,28 +814,39 @@ export function createAppServer() {
         const params = JSON.parse(bodyStr || "{}");
         const { name, songIds = [], privacy = "0", cookie = "" } = params;
 
-        if (!name) {
-          sendJson(response, 400, { message: "缺少歌单名称 name" });
+        const safeName = sanitizePlaylistName(name);
+        if (!safeName) {
+          sendJson(response, 400, { message: "缺少有效的歌单名称" });
+          return;
+        }
+
+        if (!cookie) {
+          sendJson(response, 401, {
+            code: 401,
+            message: "尚未登录网易云账号，无法直接在云端创建歌单。请先扫码登录，或保存至本地歌单。",
+          });
           return;
         }
 
         // 1. 创建歌单
         const createRes = await fetchNetEaseApi("/playlist/create", {
           method: "POST",
-          body: { name, privacy: String(privacy), type: "NORMAL" },
+          body: { name: safeName, privacy: String(privacy), type: "NORMAL" },
           cookie,
         });
 
         const playlistId = createRes?.id || createRes?.playlist?.id;
         if (!playlistId) {
-          sendJson(response, 500, { message: "创建歌单失败", detail: createRes });
+          const detailMsg = createRes?.message || createRes?.msg || "网易云服务器拒绝创建歌单（可能登录已过期，请重新扫码登录）";
+          sendJson(response, 400, { code: createRes?.code || 400, message: detailMsg, detail: createRes });
           return;
         }
 
-        // 2. 批量添加歌曲到新建的歌单
+        // 2. 批量添加歌曲到新建的歌单 (网易云 API 的 op: 'add' 会将曲目逐个置顶前置插入，因此需在请求前反转 ID 数组，以保证最终歌单严格保持 Set 从前到后的正序)
         let addedCount = 0;
         if (Array.isArray(songIds) && songIds.length > 0) {
-          const trackIdsStr = `[${songIds.map(Number).join(",")}]`;
+          const orderedTrackIds = [...songIds].reverse();
+          const trackIdsStr = `[${orderedTrackIds.map(Number).join(",")}]`;
           const addRes = await fetchNetEaseApi("/playlist/manipulate/tracks", {
             method: "POST",
             body: {

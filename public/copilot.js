@@ -115,27 +115,42 @@ export function createPlaylistPreviewCardElement(cardData) {
     </div>
 
     <div class="preview-track-list">
-      ${(cardData.tracks || []).map((t, idx) => `
-        <div class="preview-track-row" data-song-id="${t.id}">
+      ${(cardData.tracks || []).map((t, idx) => {
+        const songName = t?.name || t?.title || "未知曲目";
+        const songArtist = t?.artist || "未知艺人";
+        const songAlbum = t?.album || "Single";
+        const songCover = t?.coverUrl || t?.cover || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+        const songId = t?.id || "";
+        const songDuration = formatDuration(t?.durationMs || t?.duration);
+        const songPreview = t?.previewUrl || "";
+        const is320k = Boolean(t?.playable320k !== false);
+        const safeName = String(songName).replace(/"/g, '&quot;');
+        const safeArtist = String(songArtist).replace(/"/g, '&quot;');
+        const safeCover = String(songCover).replace(/"/g, '&quot;');
+        const safePreview = String(songPreview).replace(/"/g, '&quot;');
+
+        return `
+        <div class="preview-track-row" data-song-id="${songId}">
           <div class="track-num">${String(idx + 1).padStart(2, "0")}</div>
           <div class="track-cover-thumb">
-            <img src="${t.coverUrl || 'https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg'}" alt="Cover" />
+            <img src="${safeCover}" alt="Cover" />
           </div>
           <div class="track-meta">
             <div class="track-name-line">
-              <span class="track-name">${t.name}</span>
-              ${t.playable320k ? '<span class="pill-320k">320K</span>' : ''}
+              <span class="track-name">${songName}</span>
+              ${is320k ? '<span class="pill-320k">320K</span>' : ''}
             </div>
-            <div class="track-artist-line">${t.artist} · <span class="track-album">${t.album || 'Single'}</span></div>
+            <div class="track-artist-line">${songArtist} · <span class="track-album">${songAlbum}</span></div>
           </div>
-          <div class="track-duration">${formatDuration(t.durationMs)}</div>
+          <div class="track-duration">${songDuration}</div>
           <div class="track-actions">
-            <button class="btn-card-play-track" data-id="${t.id}" data-name="${t.name.replace(/"/g, '&quot;')}" data-artist="${t.artist.replace(/"/g, '&quot;')}" data-cover="${t.coverUrl || ''}" data-url="${t.previewUrl || ''}" title="试听">
+            <button class="btn-card-play-track" data-id="${songId}" data-name="${safeName}" data-artist="${safeArtist}" data-cover="${safeCover}" data-url="${safePreview}" title="试听">
               ▶️
             </button>
           </div>
         </div>
-      `).join("")}
+        `;
+      }).join("")}
     </div>
 
     <div class="card-footer-actions">
@@ -182,22 +197,97 @@ export function createPlaylistPreviewCardElement(cardData) {
   const btnCreate = card.querySelector(".btn-confirm-create-playlist");
   const statusMsg = card.querySelector(".card-status-msg");
 
+  function cleanName(raw) {
+    if (!raw) return "DJ AI 智能歌单";
+    let c = raw
+      .replace(/^\[[^\]]+\]\s*/g, "")
+      .replace(/^【[^】]+】\s*/g, "")
+      .replace(/^###\s*/g, "")
+      .replace(/\*\*/g, "")
+      .replace(/[\u{1F300}-\u{1FAD6}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "")
+      .replace(/\s*(现场还原完成|现场 Setlist 还原歌单|现场演出列表|现场推荐歌单|精选歌单|还原歌单|320k 匹配|推荐歌单精选)$/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!c) c = "DJ AI 智能歌单";
+    if (c.length > 36) c = c.slice(0, 36).trim();
+    return c;
+  }
+
+  const saveAsLocalPlaylist = () => {
+    const plName = cleanName(cardTitle);
+    const localPl = {
+      id: `pl_${Date.now()}`,
+      name: plName,
+      trackCount: (cardData.tracks || []).length,
+      coverUrl: cardData.tracks?.[0]?.coverUrl || "https://p1.music.126.net/6y-Zs72Cg72H0a469J469g==/109951165406022567.jpg",
+      tracks: cardData.tracks || [],
+    };
+
+    if (window.addLocalPlaylist) {
+      window.addLocalPlaylist(localPl);
+    }
+    btnCreate.innerHTML = "<span>✅ 已保存至本地临时歌单！</span>";
+    btnCreate.classList.replace("btn-primary", "btn-secondary");
+    btnCreate.disabled = true;
+    statusMsg.style.display = "block";
+    statusMsg.style.color = "#4ade80";
+    statusMsg.innerHTML = `🎉 已将 <strong>${localPl.name}</strong> (${localPl.trackCount} 首) 保存至本地歌单！<button id="btn-goto-playlists" class="btn btn-primary btn-sm" style="margin-left: 10px; padding: 2px 8px; font-size: 11px;">🎧 查看歌单</button>`;
+
+    card.querySelector("#btn-goto-playlists")?.addEventListener("click", () => {
+      document.querySelector('.nav-item[data-tab="playlists"]')?.click();
+    });
+  };
+
   btnCreate?.addEventListener("click", async () => {
+    const cookie = window.getNeteaseCookie ? window.getNeteaseCookie() : (localStorage.getItem("netease_cookie") || "");
+    const songIds = (cardData.tracks || []).map((t) => t.id);
+
+    if (!cookie) {
+      statusMsg.style.display = "block";
+      statusMsg.style.color = "#ef4444";
+      statusMsg.innerHTML = `
+        <div style="padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; margin-top: 6px;">
+          <div style="font-weight: 600; color: #f87171; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+            <span>🔑 尚未登录网易云账号</span>
+          </div>
+          <div style="color: var(--text-muted); font-size: 12px; line-height: 1.5; margin-bottom: 8px;">
+            在网易云云端建歌单需要您的账号授权。您可以立即扫码登录，或先保存至本地临时歌单：
+          </div>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-sm btn-action-login-qr" style="padding: 4px 10px; font-size: 11px;">
+              <span>🔑 立即扫码登录</span>
+            </button>
+            <button class="btn btn-secondary btn-sm btn-action-save-local" style="padding: 4px 10px; font-size: 11px;">
+              <span>💾 先存为本地临时歌单</span>
+            </button>
+          </div>
+        </div>
+      `;
+
+      statusMsg.querySelector(".btn-action-login-qr")?.addEventListener("click", () => {
+        if (window.showQrModal) window.showQrModal();
+      });
+
+      statusMsg.querySelector(".btn-action-save-local")?.addEventListener("click", () => {
+        saveAsLocalPlaylist();
+      });
+      return;
+    }
+
     btnCreate.disabled = true;
     btnCreate.innerHTML = "<span>⏳ 正在网易云创建歌单...</span>";
     statusMsg.style.display = "block";
     statusMsg.style.color = "var(--brand-red)";
     statusMsg.textContent = "正在调用网易云接口创建云端歌单并批量添加曲目...";
 
-    const cookie = window.getNeteaseCookie ? window.getNeteaseCookie() : (localStorage.getItem("netease_cookie") || "");
-    const songIds = (cardData.tracks || []).map((t) => t.id);
+    const safePlaylistName = cleanName(cardTitle);
 
     try {
       const res = await fetch("/api/agent/create-playlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: cardTitle.replace(/^\[[^\]]+\]\s*/, "").trim() || "DJ AI 智能歌单",
+          name: safePlaylistName,
           songIds,
           cookie,
         }),
@@ -215,16 +305,28 @@ export function createPlaylistPreviewCardElement(cardData) {
 
       card.querySelector("#btn-goto-playlists")?.addEventListener("click", () => {
         document.querySelector('.nav-item[data-tab="playlists"]')?.click();
-        document.getElementById("btn-refresh-playlists")?.click();
+        if (window.refreshPlaylists) window.refreshPlaylists();
       });
 
       // 自动触发主页歌单列表刷新
-      document.getElementById("btn-refresh-playlists")?.click();
+      if (window.refreshPlaylists) window.refreshPlaylists();
     } catch (err) {
       btnCreate.disabled = false;
       btnCreate.innerHTML = "<span>🚀 确认并在网易云新建歌单</span>";
       statusMsg.style.color = "#ef4444";
-      statusMsg.textContent = `❌ 创建失败: ${err.message}`;
+      statusMsg.innerHTML = `
+        <div>❌ 创建失败: ${err.message}</div>
+        <div style="margin-top: 6px; display: flex; gap: 8px;">
+          <button class="btn btn-primary btn-sm btn-retry-login" style="padding: 3px 8px; font-size: 11px;"><span>🔑 重新扫码登录</span></button>
+          <button class="btn btn-secondary btn-sm btn-fallback-local" style="padding: 3px 8px; font-size: 11px;"><span>💾 保存为本地歌单</span></button>
+        </div>
+      `;
+      statusMsg.querySelector(".btn-retry-login")?.addEventListener("click", () => {
+        if (window.showQrModal) window.showQrModal();
+      });
+      statusMsg.querySelector(".btn-fallback-local")?.addEventListener("click", () => {
+        saveAsLocalPlaylist();
+      });
     }
   });
 
@@ -253,27 +355,37 @@ export function createArtistSetsCardElement(cardData) {
     </div>
 
     <div class="artist-sets-list">
-      ${sets.map((s, idx) => `
-        <div class="set-candidate-item" data-url="${s.url}">
+      ${sets.map((s, idx) => {
+        const setTitle = s.title || s.name || "Live Set";
+        const setVenue = s.venue || s.location || "";
+        const setDate = s.date || "Recent";
+        const setTracks = s.trackCount || 35;
+        const setUrl = s.url || "";
+        const setDesc = s.description || "";
+        const safeTitleAttr = String(setTitle).replace(/"/g, '&quot;');
+
+        return `
+        <div class="set-candidate-item" data-url="${setUrl}">
           <div class="set-item-left">
             <div class="set-title-row">
               <span class="set-index-tag">#${idx + 1}</span>
-              <span class="set-name">${s.title}</span>
+              <span class="set-name">${setTitle}</span>
             </div>
             <div class="set-meta-row">
-              <span class="meta-tag">📅 ${s.date || 'Recent'}</span>
-              ${s.venue ? `<span class="meta-tag">🎪 ${s.venue}</span>` : ''}
-              <span class="meta-tag">🎵 约 ${s.trackCount || 35} 首曲目</span>
+              <span class="meta-tag">📅 ${setDate}</span>
+              ${setVenue ? `<span class="meta-tag">🎪 ${setVenue}</span>` : ''}
+              <span class="meta-tag">🎵 约 ${setTracks} 首曲目</span>
             </div>
-            ${s.description ? `<div class="set-desc-text">${s.description}</div>` : ''}
+            ${setDesc ? `<div class="set-desc-text">${setDesc}</div>` : ''}
           </div>
           <div class="set-item-right">
-            <button class="btn btn-primary btn-sm btn-parse-this-set" data-url="${s.url}" data-title="${s.title.replace(/"/g, '&quot;')}">
+            <button class="btn btn-primary btn-sm btn-parse-this-set" data-url="${setUrl}" data-title="${safeTitleAttr}">
               <span>⚡ 解析并生成歌单</span>
             </button>
           </div>
         </div>
-      `).join("")}
+        `;
+      }).join("")}
     </div>
   `;
 
@@ -281,7 +393,7 @@ export function createArtistSetsCardElement(cardData) {
   card.querySelectorAll(".btn-parse-this-set").forEach((btn, idx) => {
     btn.addEventListener("click", () => {
       const targetUrl = btn.getAttribute("data-url");
-      const targetTitle = btn.getAttribute("data-title");
+      const targetTitle = btn.getAttribute("data-title") || "Live Set";
       const currentSet = sets[idx];
 
       btn.disabled = true;
@@ -379,11 +491,18 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
       container.scrollTop = container.scrollHeight;
     },
     appendCard: (card) => {
+      if (!card) return;
+      const existing = contentArea.querySelector(".copilot-preview-card");
+      if (existing) existing.remove();
+
       const cardEl = (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector")
         ? createArtistSetsCardElement(card)
         : createPlaylistPreviewCardElement(card);
-      contentArea.appendChild(cardEl);
-      container.scrollTop = container.scrollHeight;
+
+      if (cardEl) {
+        contentArea.appendChild(cardEl);
+        container.scrollTop = container.scrollHeight;
+      }
     },
   };
 }
@@ -470,7 +589,12 @@ export async function sendCopilotMessage(userText) {
           } else if (event.type === "status" && event.data) {
             indicatorText.textContent = event.data;
           } else if (event.type === "card" && event.data) {
-            aiMsgHandle.appendCard(event.data);
+            console.log("[COPILOT CLIENT] Received card payload:", event.data);
+            try {
+              aiMsgHandle.appendCard(event.data);
+            } catch (cardErr) {
+              console.error("[COPILOT CLIENT] Error mounting card:", cardErr);
+            }
           }
         } catch {
           // ignore
