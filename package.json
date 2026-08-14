@@ -45,5 +45,11 @@
       "createStartMenuShortcut": true,
       "shortcutName": "YesMusic DJ Helper"
     }
+  },
+  "dependencies": {
+    "puppeteer-core": "^25.7.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "puppeteer-real-browser": "^1.4.4"
   }
 }

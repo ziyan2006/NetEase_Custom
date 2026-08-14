@@ -1,0 +1,15 @@
+[
+  {
+    "name": "guid",
+    "value": "5bff7eb3c0353",
+    "domain": ".1001tracklists.com",
+    "path": "/",
+    "expires": 1795369370.602456,
+    "size": 17,
+    "httpOnly": false,
+    "secure": false,
+    "session": false,
+    "priority": "Medium",
+    "sourceScheme": "Secure"
+  }
+]
