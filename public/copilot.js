@@ -232,6 +232,68 @@ export function createPlaylistPreviewCardElement(cardData) {
 }
 
 /**
+ * 渲染「艺人现场 Setlist 候选列表」富卡片组件
+ */
+export function createArtistSetsCardElement(cardData) {
+  const card = document.createElement("div");
+  card.className = "copilot-preview-card copilot-artist-sets-card";
+
+  const artist = cardData.artist || "Featured Artist";
+  const sets = cardData.sets || [];
+
+  card.innerHTML = `
+    <div class="card-header-banner">
+      <div class="card-title-group">
+        <div class="card-title-text">${cardData.title || `🎪 ${artist} 现场演出列表`}</div>
+        <div class="card-subtitle-text">${cardData.subtitle || `找到 ${sets.length} 个代表性 Setlist，点击即可解析`}</div>
+      </div>
+      <div class="card-badge-pill">
+        <span>⚡ ${sets.length} 场候选</span>
+      </div>
+    </div>
+
+    <div class="artist-sets-list">
+      ${sets.map((s, idx) => `
+        <div class="set-candidate-item" data-url="${s.url}">
+          <div class="set-item-left">
+            <div class="set-title-row">
+              <span class="set-index-tag">#${idx + 1}</span>
+              <span class="set-name">${s.title}</span>
+            </div>
+            <div class="set-meta-row">
+              <span class="meta-tag">📅 ${s.date || 'Recent'}</span>
+              ${s.venue ? `<span class="meta-tag">🎪 ${s.venue}</span>` : ''}
+              <span class="meta-tag">🎵 约 ${s.trackCount || 35} 首曲目</span>
+            </div>
+            ${s.description ? `<div class="set-desc-text">${s.description}</div>` : ''}
+          </div>
+          <div class="set-item-right">
+            <button class="btn btn-primary btn-sm btn-parse-this-set" data-url="${s.url}" data-title="${s.title.replace(/"/g, '&quot;')}">
+              <span>⚡ 解析并生成歌单</span>
+            </button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+
+  // 绑定每一个候选演出的点击事件
+  card.querySelectorAll(".btn-parse-this-set").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const targetUrl = btn.getAttribute("data-url");
+      if (targetUrl) {
+        btn.disabled = true;
+        btn.innerHTML = "<span>⏳ 正在解析...</span>";
+        // 自动将 URL 发送至 Copilot 对话流中，触发 1001TL 解析与网易云匹配全流程！
+        sendCopilotMessage(targetUrl);
+      }
+    });
+  });
+
+  return card;
+}
+
+/**
  * 添加消息气泡到 Copilot 消息容器
  */
 export function appendCopilotMessage({ role, content = "", reasoning = "", cardData = null }) {
@@ -274,7 +336,9 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
 
   // 如果有预览卡片
   if (cardData) {
-    const cardEl = createPlaylistPreviewCardElement(cardData);
+    const cardEl = (cardData.sourceType === "artist_sets_selector" || cardData.type === "artist_sets_selector")
+      ? createArtistSetsCardElement(cardData)
+      : createPlaylistPreviewCardElement(cardData);
     contentArea.appendChild(cardEl);
   }
 
@@ -308,7 +372,9 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
       container.scrollTop = container.scrollHeight;
     },
     appendCard: (card) => {
-      const cardEl = createPlaylistPreviewCardElement(card);
+      const cardEl = (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector")
+        ? createArtistSetsCardElement(card)
+        : createPlaylistPreviewCardElement(card);
       contentArea.appendChild(cardEl);
       container.scrollTop = container.scrollHeight;
     },

@@ -1555,5 +1555,97 @@ select.input-box option {
   padding: 6px 16px;
 }
 
+/* Artist Sets Selector Rich Card */
+.copilot-artist-sets-card {
+  background: linear-gradient(160deg, #1a1a26 0%, #12121a 100%);
+  border: 1px solid rgba(234, 68, 83, 0.4);
+}
+
+.artist-sets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.set-candidate-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  transition: var(--transition-fast);
+}
+
+.set-candidate-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(234, 68, 83, 0.4);
+  transform: translateY(-1px);
+}
+
+.set-item-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-index-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--brand-red);
+  background: rgba(234, 68, 83, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.set-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.set-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.meta-tag {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.set-desc-text {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+.set-item-right {
+  flex-shrink: 0;
+}
+
+.btn-parse-this-set {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+
 
 

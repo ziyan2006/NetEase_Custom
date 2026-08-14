@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { inspectAudioFile } from "./lib/audio-file.js";
 import { downloadAndExportTrack } from "./lib/audio-exporter.js";
 import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
-import { fetchAndParse1001TracklistUrl, parseTracklistText } from "./lib/dj-agent/tracklist-parser.js";
+import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
 import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
@@ -757,6 +757,25 @@ export function createAppServer() {
         });
       } catch (err) {
         sendJson(response, 500, { message: "获取热单雷达异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/artist-sets") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { artist } = params;
+
+        if (!artist) {
+          sendJson(response, 400, { message: "缺少 artist 参数" });
+          return;
+        }
+
+        const result = await searchArtistRecentSets(artist);
+        sendJson(response, 200, result);
+      } catch (err) {
+        sendJson(response, 500, { message: "检索艺人现场失败: " + err.message });
       }
       return;
     }
