@@ -21,6 +21,7 @@ const viewPanels = document.querySelectorAll(".view-panel");
 const headerPageTitle = document.querySelector("#header-page-title");
 
 const tabTitles = {
+  copilot: "AI DJ 助手 (Copilot)",
   playlists: "云端歌单",
   search: "在线搜索歌曲",
   settings: "导出目录配置",
@@ -649,6 +650,30 @@ async function playTrack(song) {
     alert("播放音频发生异常: " + err.message);
   }
 }
+
+// 供 AI DJ Copilot 等外部模块直接调用的播放与凭据接口
+window.getNeteaseCookie = () => localStorage.getItem("netease_cookie") || "";
+window.playTrackDirectly = async (song) => {
+  if (!song) return;
+  const targetCover = song.cover || song.coverUrl;
+  if (playerSongTitle) playerSongTitle.textContent = song.name || "未知曲目";
+  if (playerArtistName) playerArtistName.textContent = song.artist || "未知歌手";
+  if (playerCoverImg && targetCover) playerCoverImg.src = targetCover;
+
+  if (song.previewUrl && audioEngine) {
+    audioEngine.src = song.previewUrl;
+    try {
+      await audioEngine.play();
+      isAudioPlaying = true;
+      if (btnPlayerToggle) btnPlayerToggle.textContent = "⏸️";
+      setStatusMessage(`正在试听: ${song.artist} - ${song.name}`);
+    } catch {
+      playTrack(song);
+    }
+  } else {
+    playTrack(song);
+  }
+};
 
 if (audioEngine) {
   audioEngine.addEventListener("timeupdate", () => {

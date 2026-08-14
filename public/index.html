@@ -22,7 +22,12 @@
         </div>
 
         <nav class="nav-menu">
-          <div class="nav-item active" data-tab="playlists">
+          <div class="nav-item active" data-tab="copilot">
+            <div class="nav-icon">✨</div>
+            <span>AI DJ 助手</span>
+            <span class="nav-tag" style="background: linear-gradient(135deg, #ea4453, #ff7685); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 10px; margin-left: auto;">Copilot</span>
+          </div>
+          <div class="nav-item" data-tab="playlists">
             <div class="nav-icon">🎧</div>
             <span>云端歌单</span>
           </div>
@@ -71,8 +76,84 @@
           </div>
         </header>
 
+        <!-- 视图 0: AI DJ Copilot -->
+        <div id="tab-copilot" class="view-panel active">
+          <div class="copilot-container">
+            <!-- 顶部控制条 -->
+            <div class="copilot-header-bar">
+              <div class="copilot-title-box">
+                <span class="copilot-sparkle-icon">✨</span>
+                <div>
+                  <div class="copilot-main-title">YesMusic DJ Copilot</div>
+                  <div class="copilot-sub-title">1001TL 现场克隆 · 风格热单雷达 · Camelot 调性过渡 · 智能歌单编排</div>
+                </div>
+              </div>
+              <div class="copilot-header-actions">
+                <button id="btn-copilot-settings" class="btn btn-secondary btn-sm" title="大模型 API 配置">
+                  <span>⚙️ 模型配置</span>
+                </button>
+                <button id="btn-copilot-clear" class="btn btn-secondary btn-sm" title="清空对话记录">
+                  <span>🧹 清空记录</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- 消息流容器 -->
+            <div id="copilot-messages" class="copilot-messages-container">
+              <!-- 初始欢迎卡片与推荐 Prompt -->
+              <div class="copilot-welcome-card">
+                <div class="welcome-badge">🎧 DJ 智能助手已就绪</div>
+                <h3 class="welcome-heading">有什么可以协助您的 DJ 工作流？</h3>
+                <p class="welcome-desc">
+                  支持直接发送 1001Tracklists 现场链接自动逆向还原歌单、一键检索 Beatport 风格榜单、Camelot 调性和谐度过渡建议或自然语言选曲排歌。
+                </p>
+                <div class="copilot-quick-pills">
+                  <button class="quick-pill-btn" data-prompt="https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage-tomorrowland-belgium-weekend-1-2023-07-22.html">
+                    🎸 解析 1001TL 现场 Setlist
+                  </button>
+                  <button class="quick-pill-btn" data-prompt="帮我整理本周 Beatport 最热门的 Melodic Techno 单曲">
+                    🌌 本周 Melodic Techno 热单
+                  </button>
+                  <button class="quick-pill-btn" data-prompt="帮我推荐本周 Tech House 风格的热门单曲">
+                    ⚡ Tech House 趋势雷达
+                  </button>
+                  <button class="quick-pill-btn" data-prompt="推荐适合接在 126 BPM 8A 后的 Camelot 调性与混音方案">
+                    🎛️ 8A 调性过渡建议
+                  </button>
+                  <button class="quick-pill-btn" data-prompt="做一张适合 128BPM 峰值时段 (Peak Time) 的高能量 Bass House 歌单">
+                    🔊 128 BPM 场景排歌
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 底部输入框 -->
+            <div class="copilot-input-wrapper">
+              <div class="copilot-input-box">
+                <textarea
+                  id="copilot-input"
+                  class="copilot-textarea"
+                  placeholder="输入 1001Tracklists 链接、风格找歌指令、或调性过渡分析... (Shift+Enter 换行，Enter 发送)"
+                  rows="1"
+                ></textarea>
+                <div class="copilot-input-controls">
+                  <span id="copilot-status-indicator" class="copilot-indicator" style="display: none;">
+                    <span class="indicator-dot"></span> <span id="copilot-indicator-text">正在处理...</span>
+                  </span>
+                  <button id="btn-copilot-send" class="btn btn-primary btn-sm btn-copilot-action">
+                    <span>🚀 发送</span>
+                  </button>
+                  <button id="btn-copilot-stop" class="btn btn-secondary btn-sm btn-copilot-action" style="display: none;">
+                    <span>⏹ 停止</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 视图 1: 歌单导出网格 -->
-        <div id="tab-playlists" class="view-panel active">
+        <div id="tab-playlists" class="view-panel">
           <div class="card-section">
             <div class="section-header">
               <div class="section-title">
@@ -333,8 +414,52 @@
       </div>
     </div>
 
+    <!-- AI Copilot 模型配置 Modal -->
+    <div id="modal-copilot-settings" class="modal-backdrop" style="display: none;">
+      <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px;">
+          <div style="font-size: 16px; font-weight: 800; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+            <span>✨</span> <span>AI DJ Copilot 模型设置</span>
+          </div>
+          <button id="btn-close-copilot-settings" style="background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer;">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">API Base URL (OpenAI 兼容端点):</label>
+            <input id="copilot-config-url" class="input-box" type="text" value="https://api.deepseek.com" placeholder="例如 https://api.deepseek.com" style="margin-top: 6px;" />
+            <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">支持 DeepSeek、OpenAI、通义千问、Moonshot、Ollama 等任何标准端点</small>
+          </div>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">API Key:</label>
+            <input id="copilot-config-key" class="input-box" type="password" value="sk-14d4fe9c926f48bda06a6ec402ff5072" placeholder="sk-..." style="margin-top: 6px;" />
+            <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">安全保存在本地 LocalStorage 中，不会泄露至外部</small>
+          </div>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">模型名称 (Model):</label>
+            <input id="copilot-config-model" class="input-box" type="text" value="deepseek-v4-flash" placeholder="例如 deepseek-v4-flash, deepseek-chat, gpt-4o" style="margin-top: 6px;" />
+          </div>
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary); display: flex; justify-content: space-between;">
+              <span>创造力 (Temperature):</span>
+              <span id="temp-val" style="color: var(--brand-red); font-weight: 800;">0.7</span>
+            </label>
+            <input id="copilot-config-temp" type="range" min="0.0" max="1.5" step="0.1" value="0.7" style="width: 100%; margin-top: 8px; accent-color: var(--brand-red);" />
+          </div>
+          <div id="copilot-config-test-status" style="font-size: 12px; margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; display: none;"></div>
+        </div>
+        <div class="modal-footer" style="display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+          <button id="btn-test-copilot-config" class="btn btn-secondary btn-sm">⚡ 测试连通性</button>
+          <div style="display: flex; gap: 10px;">
+            <button id="btn-cancel-copilot-settings" class="btn btn-secondary btn-sm">取消</button>
+            <button id="btn-save-copilot-settings" class="btn btn-primary btn-sm">💾 保存配置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="/ncm-decrypt.js"></script>
     <script src="/qrcode.js"></script>
+    <script type="module" src="/copilot.js"></script>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

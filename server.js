@@ -15,6 +15,12 @@ import { basename, extname, join, normalize, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { inspectAudioFile } from "./lib/audio-file.js";
 import { downloadAndExportTrack } from "./lib/audio-exporter.js";
+import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
+import { fetchAndParse1001TracklistUrl, parseTracklistText } from "./lib/dj-agent/tracklist-parser.js";
+import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
+import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
+import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
+import { DEFAULT_LLM_CONFIG } from "./lib/dj-agent/llm-client.js";
 
 const projectDirectory = fileURLToPath(new URL(".", import.meta.url));
 const publicDirectory = resolve(projectDirectory, "public");
@@ -663,6 +669,170 @@ export function createAppServer() {
       } catch (err) {
         console.error("歌单导出异常", err);
         sendJson(response, 500, { message: "批量导出发生异常: " + err.message });
+      }
+      return;
+    }
+
+    // ===== DJ Agent Endpoints =====
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/chat") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { message, history = [], cookie = "", config = {} } = params;
+
+        response.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          "Connection": "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        response.write("retry: 1000\n\n");
+
+        try {
+          await dispatchAgentWorkflow({
+            message,
+            history,
+            cookie,
+            config,
+            onStream: (evt) => writeSseEvent(response, evt),
+          });
+        } catch (err) {
+          writeSseEvent(response, { type: "text", data: `\n\n⚠️ 处理请求失败: ${err.message}` });
+        } finally {
+          writeSseEvent(response, { type: "done", data: "stream_finished" });
+          response.end();
+        }
+      } catch (err) {
+        sendJson(response, 500, { message: "Agent 对话异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/parse-1001tl") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { url, text, cookie = "" } = params;
+
+        let parsedSet;
+        if (url) {
+          parsedSet = await fetchAndParse1001TracklistUrl(url, { filterUnreleased: true });
+        } else if (text) {
+          parsedSet = parseTracklistText(text, { filterUnreleased: true });
+        } else {
+          sendJson(response, 400, { message: "缺少 url 或 text 参数" });
+          return;
+        }
+
+        const matchRes = await batchMatchTracklist(parsedSet.tracks, cookie);
+        sendJson(response, 200, {
+          title: parsedSet.title || "Live Set",
+          dj: parsedSet.dj || "",
+          parsedSet,
+          matchRes,
+        });
+      } catch (err) {
+        sendJson(response, 500, { message: "1001TL 解析异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "GET" && urlObj.pathname === "/api/agent/trend-genres") {
+      sendJson(response, 200, { genres: getAvailableGenres() });
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/trend-radar") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { genre, cookie = "" } = params;
+
+        const genreData = await getTrendingTracksByGenre(genre);
+        const matchRes = await batchMatchTracklist(genreData.tracks, cookie);
+        sendJson(response, 200, {
+          genreData,
+          matchRes,
+        });
+      } catch (err) {
+        sendJson(response, 500, { message: "获取热单雷达异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/camelot") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { fromKey, fromBpm, toKey, toBpm, key } = params;
+
+        if (key) {
+          const norm = normalizeCamelotKey(key);
+          sendJson(response, 200, {
+            key: norm,
+            compatible: getCompatibleKeys(norm),
+          });
+          return;
+        }
+
+        const analysis = analyzeTransition(fromKey, Number(fromBpm), toKey, Number(toBpm));
+        sendJson(response, 200, analysis);
+      } catch (err) {
+        sendJson(response, 500, { message: "Camelot 调性分析异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/create-playlist") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { name, songIds = [], privacy = "0", cookie = "" } = params;
+
+        if (!name) {
+          sendJson(response, 400, { message: "缺少歌单名称 name" });
+          return;
+        }
+
+        // 1. 创建歌单
+        const createRes = await fetchNetEaseApi("/playlist/create", {
+          method: "POST",
+          body: { name, privacy: String(privacy), type: "NORMAL" },
+          cookie,
+        });
+
+        const playlistId = createRes?.id || createRes?.playlist?.id;
+        if (!playlistId) {
+          sendJson(response, 500, { message: "创建歌单失败", detail: createRes });
+          return;
+        }
+
+        // 2. 批量添加歌曲到新建的歌单
+        let addedCount = 0;
+        if (Array.isArray(songIds) && songIds.length > 0) {
+          const trackIdsStr = `[${songIds.map(Number).join(",")}]`;
+          const addRes = await fetchNetEaseApi("/playlist/manipulate/tracks", {
+            method: "POST",
+            body: {
+              op: "add",
+              pid: String(playlistId),
+              trackIds: trackIdsStr,
+            },
+            cookie,
+          });
+          addedCount = addRes?.count || songIds.length;
+        }
+
+        sendJson(response, 200, {
+          code: 200,
+          message: "歌单创建成功并已添加曲目",
+          playlistId,
+          name,
+          addedCount,
+        });
+      } catch (err) {
+        sendJson(response, 500, { message: "创建歌单与添加曲目失败: " + err.message });
       }
       return;
     }

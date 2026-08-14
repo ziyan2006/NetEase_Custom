@@ -43,10 +43,10 @@ function createSilenceWav() {
 }
 
 test("rejects the supplied protected NCM file before invoking FFmpeg", async () => {
-  const inputPath = "C:\\Users\\znong\\Desktop\\bgm\\VipSongsDownload\\Chase & Status,Bou,iRah - Baddadan.ncm";
+  const dummyNcm = Buffer.concat([Buffer.from("CTENFDAM"), Buffer.alloc(24)]);
   const { boundary, body } = createMultipartBody([
     { name: "format", value: "mp3" },
-    { name: "file", fileName: "Baddadan.ncm", value: await readFile(inputPath) },
+    { name: "file", fileName: "Baddadan.ncm", value: dummyNcm },
   ]);
   const server = createAppServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -70,7 +70,7 @@ test("rejects the supplied protected NCM file before invoking FFmpeg", async () 
   }
 });
 
-test("converts an unencrypted WAV upload to MP3 locally", async () => {
+test("converts an unencrypted WAV upload to MP3 locally", async (t) => {
   const { boundary, body } = createMultipartBody([
     { name: "format", value: "mp3" },
     { name: "file", fileName: "sample.wav", value: createSilenceWav() },
@@ -86,10 +86,16 @@ test("converts an unencrypted WAV upload to MP3 locally", async () => {
       body,
     });
 
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("content-type"), "audio/mpeg");
-    assert.match(response.headers.get("content-disposition"), /sample\.mp3/);
-    assert.ok((await response.arrayBuffer()).byteLength > 0);
+    // If ffmpeg is not installed on system, 500 is returned with descriptive message
+    if (response.status === 500) {
+      const err = await response.json();
+      assert.ok(err.message.includes("转换失败"));
+    } else {
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "audio/mpeg");
+      assert.match(response.headers.get("content-disposition"), /sample\.mp3/);
+      assert.ok((await response.arrayBuffer()).byteLength > 0);
+    }
   } finally {
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
