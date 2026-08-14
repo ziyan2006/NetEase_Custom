@@ -278,13 +278,20 @@ export function createArtistSetsCardElement(cardData) {
   `;
 
   // 绑定每一个候选演出的点击事件
-  card.querySelectorAll(".btn-parse-this-set").forEach((btn) => {
+  card.querySelectorAll(".btn-parse-this-set").forEach((btn, idx) => {
     btn.addEventListener("click", () => {
       const targetUrl = btn.getAttribute("data-url");
-      if (targetUrl) {
-        btn.disabled = true;
-        btn.innerHTML = "<span>⏳ 正在解析...</span>";
-        // 自动将 URL 发送至 Copilot 对话流中，触发 1001TL 解析与网易云匹配全流程！
+      const targetTitle = btn.getAttribute("data-title");
+      const currentSet = sets[idx];
+
+      btn.disabled = true;
+      btn.innerHTML = "<span>⏳ 正在解析...</span>";
+
+      if (currentSet && Array.isArray(currentSet.tracks) && currentSet.tracks.length > 0) {
+        // 直接将该演出的完整曲目清单发送到对话中进行 320k 匹配与生成预览卡片
+        const tracklistPrompt = `请为以下现场演出生成网易云 320k 歌单：\n【${targetTitle}】\n` + currentSet.tracks.map((t, i) => `${String(i + 1).padStart(2, "0")}. ${t}`).join("\n");
+        sendCopilotMessage(tracklistPrompt);
+      } else if (targetUrl) {
         sendCopilotMessage(targetUrl);
       }
     });

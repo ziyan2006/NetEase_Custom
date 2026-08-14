@@ -673,7 +673,11 @@ export function createAppServer() {
       return;
     }
 
-    // ===== DJ Agent Endpoints =====
+    // ===== DJ Agent Endpoints & Request Logger =====
+    if (urlObj.pathname.startsWith("/api/agent/")) {
+      const nowStr = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      console.log(`[AGENT API ${nowStr}] ${request.method} ${urlObj.pathname}`);
+    }
 
     if (request.method === "POST" && urlObj.pathname === "/api/agent/chat") {
       try {

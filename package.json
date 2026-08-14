@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "electron": "npx electron .",
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "pack": "npx @electron/packager . YesMusicDJHelper --platform=win32 --arch=x64 --out=dist_app --overwrite --electron-version=34.3.0",
     "dist": "npx electron-builder --win nsis --config.electronVersion=34.3.0"
   },
