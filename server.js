@@ -214,7 +214,7 @@ function readJsonBody(request) {
  *  track-done {type,index,total,title,artist,completed,overall} | track-fail {type,index,total,title,artist,reason,completed,overall}
  *  done {type,code,message,successCount,failedCount,successTracks,failedTracks,overall}
  */
-async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, concurrency = 4 }, emit) {
+export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, concurrency = 4 }, emit) {
   const poolConcurrency = Math.max(1, Math.min(Number(concurrency) || 4, 8));
   console.log(`[EXPORT PLAYLIST] Starting parallel export for: ${name} (ID: ${id}) to: ${outputRoot} with concurrency ${poolConcurrency}`);
 
