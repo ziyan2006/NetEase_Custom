@@ -404,8 +404,10 @@ export function createArtistSetsCardElement(cardData) {
         // 直接将该演出的完整曲目清单发送到对话中进行 320k 匹配与生成预览卡片
         const tracklistPrompt = `请为以下现场演出生成网易云 320k 歌单：\n【${targetTitle}】\n` + currentSet.tracks.map((t, i) => `${String(i + 1).padStart(2, "0")}. ${t}`).join("\n");
         sendCopilotMessage(tracklistPrompt);
-      } else if (targetUrl) {
+      } else if (targetUrl && !targetUrl.includes("/dynamic/")) {
         sendCopilotMessage(targetUrl);
+      } else {
+        sendCopilotMessage(`请解析现场演出并生成网易云歌单：${targetTitle}`);
       }
     });
   });
