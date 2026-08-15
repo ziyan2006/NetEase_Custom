@@ -9,8 +9,8 @@ const STORAGE_KEY_HISTORY = "yesmusic_copilot_history";
 const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com",
   apiKey: "sk-14d4fe9c926f48bda06a6ec402ff5072",
-  model: "deepseek-chat",
-  thinkingEffort: "fast",
+  model: "deepseek-v4-flash",
+  thinkingEffort: "high",
   temperature: 0.7,
 };
 
@@ -1158,16 +1158,24 @@ export function initCopilot() {
 
   // 设置 Modal 打开与关闭
   const openModal = () => {
-    if (settingsModal) settingsModal.style.display = "flex";
+    if (settingsModal) {
+      settingsModal.classList.add("active");
+    }
     if (testStatusEl) testStatusEl.style.display = "none";
+    refreshModelsList(true);
   };
   const closeModal = () => {
-    if (settingsModal) settingsModal.style.display = "none";
+    if (settingsModal) {
+      settingsModal.classList.remove("active");
+    }
   };
 
   settingsBtn?.addEventListener("click", openModal);
   closeSettingsBtn?.addEventListener("click", closeModal);
   cancelSettingsBtn?.addEventListener("click", closeModal);
+  settingsModal?.addEventListener("click", (e) => {
+    if (e.target === settingsModal) closeModal();
+  });
 
   tempInput?.addEventListener("input", () => {
     if (tempValSpan) tempValSpan.textContent = tempInput.value;
