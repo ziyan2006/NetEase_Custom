@@ -208,14 +208,15 @@ function readJsonBody(request) {
 }
 
 /**
- * 执行歌单批量导出，通过 emit(event) 实时推送进度事件：
- *  start {type,total,playlistName,overall} | urls {type,done,total,overall}
- *  track {type,index,total,title,artist,overall} | progress {type,index,title,artist,downloaded,totalBytes,percent,speedBytesPerSec,phase,overall}
- *  track-done {type,index,title,artist,overall} | track-fail {type,index,title,artist,reason,overall}
+ * 执行歌单批量多线程并行导出，通过 emit(event) 实时推送进度事件：
+ *  start {type,total,playlistName,concurrency,overall} | urls {type,done,total,overall}
+ *  track {type,index,total,title,artist,activeCount,completed,overall} | progress {type,index,title,artist,downloaded,totalBytes,percent,speedBytesPerSec,phase,concurrency,completed,total,overall}
+ *  track-done {type,index,total,title,artist,completed,overall} | track-fail {type,index,total,title,artist,reason,completed,overall}
  *  done {type,code,message,successCount,failedCount,successTracks,failedTracks,overall}
  */
-async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) {
-  console.log(`[EXPORT PLAYLIST] Starting export for: ${name} (ID: ${id}) to: ${outputRoot}`);
+async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, concurrency = 4 }, emit) {
+  const poolConcurrency = Math.max(1, Math.min(Number(concurrency) || 4, 8));
+  console.log(`[EXPORT PLAYLIST] Starting parallel export for: ${name} (ID: ${id}) to: ${outputRoot} with concurrency ${poolConcurrency}`);
 
   // 1. 获取歌单内曲目 ID 与基本信息
   const playlistRes = await fetchNetEaseApi("/v6/playlist/detail", {
@@ -230,7 +231,8 @@ async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) 
     return emptySummary;
   }
 
-  emit({ type: "start", total: tracks.length, playlistName: name, overall: 0 });
+  const effectiveConcurrency = Math.min(poolConcurrency, tracks.length);
+  emit({ type: "start", total: tracks.length, playlistName: name, concurrency: effectiveConcurrency, overall: 0 });
 
   // 2. 批量分段查询歌曲下载链接，规避参数长度限制
   const batchSize = 50;
@@ -260,48 +262,85 @@ async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) 
     } catch (e) {
       console.error(`获取歌曲 URL 批次失败: `, e);
     }
-    emit({ type: "urls", done: batchIndex, total: batchCount, overall: 10 * (batchIndex / batchCount) });
+    emit({ type: "urls", done: batchIndex, total: batchCount, overall: Math.round(5 * (batchIndex / batchCount)) });
   }
 
-  // 3. 循环下载、解密 NCM 并进行 MP3 转码压制
+  // 3. 多线程并发池 (Worker Pool) 调度下载、解密 NCM 并进行 MP3 转码压制
   const successTracks = [];
   const failedTracks = [];
   let successCount = 0;
   let failedCount = 0;
+  let completedCount = 0;
 
-  for (let t = 0; t < tracks.length; t++) {
-    const track = tracks[t];
-    const index = t + 1;
+  // 维护所有正在执行的任务状态及速率，计算聚合网速与综合进度
+  const activeWorkers = new Map();
+
+  function emitAggregateProgress(activeTitle, activeArtist, activeIndex, activePercent) {
+    let totalSpeed = 0;
+    let inFlightWeight = 0;
+    for (const info of activeWorkers.values()) {
+      totalSpeed += info.speedBytesPerSec || 0;
+      inFlightWeight += (info.percent || 0) / 100;
+    }
+    const overall = Math.min(
+      99,
+      Math.round(5 + 95 * ((completedCount + inFlightWeight) / tracks.length))
+    );
+    emit({
+      type: "progress",
+      index: activeIndex,
+      title: activeTitle,
+      artist: activeArtist,
+      percent: Math.min(100, Math.round(activePercent || 0)),
+      speedBytesPerSec: totalSpeed,
+      concurrency: activeWorkers.size,
+      completed: completedCount,
+      total: tracks.length,
+      overall,
+    });
+  }
+
+  async function processSingleTrack(track, index) {
     const initialUrl = songUrlsMap.get(track.id);
     const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
     const title = track.name;
 
-    emit({ type: "track", index, total: tracks.length, title, artist, overall: overallFor(t, 0, tracks.length) });
+    activeWorkers.set(track.id, {
+      speedBytesPerSec: 0,
+      percent: 0,
+      title,
+      artist,
+      index,
+      lastBytes: 0,
+      lastTime: Date.now(),
+    });
 
-    // 单曲下载速度统计（基于相邻进度事件的字节差/时间差）
-    let lastBytes = 0;
-    let lastTime = Date.now();
-    let speedBytesPerSec = 0;
+    emit({
+      type: "track",
+      index,
+      total: tracks.length,
+      title,
+      artist,
+      activeCount: activeWorkers.size,
+      concurrency: effectiveConcurrency,
+      completed: completedCount,
+      overall: Math.min(99, Math.round(5 + 95 * (completedCount / tracks.length))),
+    });
 
     const onProgress = ({ downloaded, totalBytes, percent, phase }) => {
-      const now = Date.now();
-      const deltaBytes = downloaded - lastBytes;
-      const deltaMs = now - lastTime;
-      if (deltaBytes > 0 && deltaMs > 0) {
-        speedBytesPerSec = Math.round((deltaBytes / deltaMs) * 1000);
+      const workerInfo = activeWorkers.get(track.id);
+      if (workerInfo) {
+        const now = Date.now();
+        const deltaBytes = downloaded - workerInfo.lastBytes;
+        const deltaMs = now - workerInfo.lastTime;
+        if (deltaBytes > 0 && deltaMs > 0) {
+          workerInfo.speedBytesPerSec = Math.round((deltaBytes / deltaMs) * 1000);
+        }
+        workerInfo.lastBytes = downloaded;
+        workerInfo.lastTime = now;
+        workerInfo.percent = Math.min(100, percent || 0);
       }
-      lastBytes = downloaded;
-      lastTime = now;
-      emit({
-        type: "progress",
-        index, title, artist,
-        downloaded,
-        totalBytes,
-        percent: Math.min(100, percent || 0),
-        speedBytesPerSec,
-        phase: phase || "downloading",
-        overall: overallFor(t, Math.min(100, percent || 0) / 100, tracks.length),
-      });
+      emitAggregateProgress(title, artist, index, percent);
     };
 
     try {
@@ -318,9 +357,19 @@ async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) 
             onProgress,
           });
           successCount++;
+          completedCount++;
           successTracks.push({ title, artist });
-          emit({ type: "track-done", index, title, artist, overall: overallFor(index, 0, tracks.length) });
-          continue;
+          activeWorkers.delete(track.id);
+          emit({
+            type: "track-done",
+            index,
+            total: tracks.length,
+            title,
+            artist,
+            completed: completedCount,
+            overall: Math.min(99, Math.round(5 + 95 * (completedCount / tracks.length))),
+          });
+          return;
         } catch (errInitial) {
           console.warn(`[DOWNLOAD FALLBACK] 初始 320k 直链下载失败，尝试官方通用外链: ${artist} - ${title}`, errInitial.message);
         }
@@ -340,20 +389,56 @@ async function exportPlaylistWithEvents({ id, name, outputRoot, cookie }, emit) 
         onProgress,
       });
       successCount++;
+      completedCount++;
       successTracks.push({ title, artist });
-      emit({ type: "track-done", index, title, artist, overall: overallFor(index, 0, tracks.length) });
+      activeWorkers.delete(track.id);
+      emit({
+        type: "track-done",
+        index,
+        total: tracks.length,
+        title,
+        artist,
+        completed: completedCount,
+        overall: Math.min(99, Math.round(5 + 95 * (completedCount / tracks.length))),
+      });
     } catch (err) {
       console.error(`导出曲目最终失败: ${artist} - ${title}`, err);
       failedCount++;
+      completedCount++;
       failedTracks.push({ title, artist, reason: err.message });
-      emit({ type: "track-fail", index, title, artist, reason: err.message, overall: overallFor(index, 0, tracks.length) });
+      activeWorkers.delete(track.id);
+      emit({
+        type: "track-fail",
+        index,
+        total: tracks.length,
+        title,
+        artist,
+        completed: completedCount,
+        reason: err.message,
+        overall: Math.min(99, Math.round(5 + 95 * (completedCount / tracks.length))),
+      });
     }
   }
 
-  console.log(`[EXPORT PLAYLIST] Done: ${name}. Success: ${successCount}, Failed: ${failedCount}`);
+  // 并发池执行器
+  let cursor = 0;
+  const workers = [];
+  for (let w = 0; w < effectiveConcurrency; w++) {
+    workers.push((async () => {
+      while (cursor < tracks.length) {
+        const t = cursor++;
+        const track = tracks[t];
+        await processSingleTrack(track, t + 1);
+      }
+    })());
+  }
+
+  await Promise.all(workers);
+
+  console.log(`[EXPORT PLAYLIST] Parallel export finished: ${name}. Success: ${successCount}, Failed: ${failedCount}`);
   const summary = {
     code: 200,
-    message: "歌单批量导出完成！",
+    message: `歌单多线程并行导出完成！(并发线程: ${effectiveConcurrency})`,
     successCount,
     failedCount,
     successTracks,

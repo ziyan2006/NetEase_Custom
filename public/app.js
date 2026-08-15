@@ -492,45 +492,43 @@ async function exportPlaylist(id, name) {
     modalProgressCounts.textContent = `✅ 成功 ${exportSuccess} · ⏳ 剩余 ${remain} · ❌ 失败 ${exportFail}`;
   };
 
-  // SSE 事件 -> UI 实时渲染
+  // SSE 事件 -> UI 实时渲染 (支持多线程并行并发进度)
   const onExportEvent = (evt) => {
     switch (evt.type) {
       case "start":
         exportTotal = evt.total || 0;
         applyCounts();
-        updateProgressModal(0, `共 ${exportTotal} 首歌曲，正在获取 320k 极高音质直链...`);
+        updateProgressModal(0, `共 ${exportTotal} 首歌曲，已启动 ${evt.concurrency || 4} 线程并行加速导出...`);
         break;
       case "urls":
         updateProgressModal(evt.overall ?? 0, `正在获取 320k 直链 (批次 ${evt.done}/${evt.total})...`);
         break;
       case "track":
-        if (modalProgressTrack) modalProgressTrack.textContent = `🎵 (${evt.index}/${evt.total}) ${evt.title} - ${evt.artist}`;
-        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "0%";
-        if (modalProgressDetail) modalProgressDetail.textContent = "⏳ 正在建立下载连接...";
-        updateProgressModal(evt.overall ?? 0, `正在下载第 ${evt.index}/${evt.total} 首: ${evt.title} - ${evt.artist}`);
+        if (modalProgressTrack) modalProgressTrack.textContent = `🚀 [${evt.activeCount || 4}线程并行] 正在处理: ${evt.title} - ${evt.artist}`;
+        if (modalProgressDetail) modalProgressDetail.textContent = `⚡ 正在并发下载中... (并发通道: ${evt.activeCount || 4})`;
+        updateProgressModal(evt.overall ?? 0, `多线程并行加速中 · 已完成 ${evt.completed || 0}/${evt.total} 首`);
         break;
       case "progress":
         if (modalProgressTrackFill) modalProgressTrackFill.style.width = `${Math.min(100, evt.percent)}%`;
         if (modalProgressDetail) {
           modalProgressDetail.textContent = evt.phase === "processing"
-            ? "✅ 下载完成，正在 NCM 解密 / FFmpeg 320k MP3 压盘..."
-            : `已下载 ${formatBytes(evt.downloaded)} / ${evt.totalBytes ? formatBytes(evt.totalBytes) : "未知"} · ${formatSpeed(evt.speedBytesPerSec)}`;
+            ? "✅ 音频流下载完成，正在 NCM 解密 / FFmpeg 320k MP3 压盘..."
+            : `⚡ 实时聚合网速: ${formatSpeed(evt.speedBytesPerSec)} · 当前活跃: ${evt.title} - ${evt.artist}`;
         }
-        updateProgressModal(evt.overall ?? 0, `正在下载第 ${evt.index}/${evt.total} 首: ${evt.title} - ${evt.artist}`);
+        updateProgressModal(evt.overall ?? 0, `🚀 多线程并行下载中 (${evt.concurrency || 4} 线程) · 聚合速度: ${formatSpeed(evt.speedBytesPerSec)}`);
         break;
       case "track-done":
         exportSuccess++;
         applyCounts();
-        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "100%";
-        if (modalProgressDetail) modalProgressDetail.textContent = "✅ 下载与转码完成";
-        updateProgressModal(evt.overall ?? 0, `已完成 ${evt.index}/${evt.total} 首，继续下一首...`);
+        if (modalProgressTrack) modalProgressTrack.textContent = `✅ 已就绪: ${evt.title} - ${evt.artist}`;
+        if (modalProgressDetail) modalProgressDetail.textContent = `✅ 320k MP3 转码压盘完成 (已完成 ${evt.completed || exportSuccess}/${evt.total || exportTotal})`;
+        updateProgressModal(evt.overall ?? 0, `多线程并行加速中 · 已完成 ${evt.completed || exportSuccess}/${evt.total || exportTotal} 首`);
         break;
       case "track-fail":
         exportFail++;
         applyCounts();
-        if (modalProgressTrackFill) modalProgressTrackFill.style.width = "100%";
-        if (modalProgressDetail) modalProgressDetail.textContent = `❌ 失败: ${evt.reason || "未知原因"}`;
-        updateProgressModal(evt.overall ?? 0, `第 ${evt.index}/${evt.total} 首下载失败，继续导出中...`);
+        if (modalProgressDetail) modalProgressDetail.textContent = `❌ 《${evt.title}》失败: ${evt.reason || "未知原因"}`;
+        updateProgressModal(evt.overall ?? 0, `第 ${evt.index}/${evt.total} 首跳过，多线程继续导出中...`);
         break;
       case "done":
         updateProgressModal(100, evt.message || "导出完成！");
