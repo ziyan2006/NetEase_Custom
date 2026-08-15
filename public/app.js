@@ -367,13 +367,17 @@ function startQrPolling(unikey) {
 }
 
 async function showQrModal() {
-  if (window.electronAPI && typeof window.electronAPI.openNeteaseLogin === "function") {
-    window.electronAPI.openNeteaseLogin();
-    return;
-  }
-
   if (!qrModal) return;
   qrModal.classList.add("active");
+
+  const electronLoginLink = document.querySelector("#electron-official-login-btn");
+  if (electronLoginLink) {
+    if (window.electronAPI && typeof window.electronAPI.openNeteaseLogin === "function") {
+      electronLoginLink.style.display = "inline-block";
+    } else {
+      electronLoginLink.style.display = "none";
+    }
+  }
 
   const box = document.querySelector("#qr-code-box");
   const statusTextEl = document.querySelector("#qr-status-text");

@@ -1,7 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
-// 强行禁用内置 Chromium 的代理服务器，绕过一切 Clash/V2Ray 系统级代理，确保 CDN 直连国内节点
-app.commandLine.appendSwitch("no-proxy-server");
-
 import { createAppServer } from "./server.js";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -61,6 +58,8 @@ ipcMain.on("netease:open-login", () => {
     title: "网易云官方安全登录",
     parent: mainWindow,
     modal: true,
+    show: false,
+    backgroundColor: "#0b0f19",
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,
@@ -68,10 +67,18 @@ ipcMain.on("netease:open-login", () => {
     },
   });
 
+  loginWindow.once("ready-to-show", () => {
+    if (loginWindow) loginWindow.show();
+  });
+
+  loginWindow.webContents.on("did-fail-load", (event, errorCode, errorDesc, validatedURL) => {
+    console.error(`[Login Window Error] Failed to load ${validatedURL}: ${errorCode} ${errorDesc}`);
+  });
+
   const chromeUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
   loginWindow.webContents.setUserAgent(chromeUA);
 
-  // 直接加载官方主站，避免特定二级页面 404
+  // 直接加载官方主站
   loginWindow.loadURL("https://music.163.com/");
 
   // 页面加载完成后自动触发顶部“登录”按钮点击，调出扫码框

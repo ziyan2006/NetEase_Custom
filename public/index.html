@@ -403,6 +403,9 @@
             <input id="input-music-u" type="password" placeholder="粘贴 MUSIC_U 值" class="input-box" style="padding: 6px 10px; font-size: 11px; height: 32px;" />
             <button id="btn-submit-music-u" class="btn btn-primary btn-sm" style="height: 32px;">确定</button>
           </div>
+          <div style="margin-top: 10px; text-align: center;">
+            <button id="electron-official-login-btn" class="btn btn-secondary btn-sm" style="display: none; width: 100%; font-size: 11px; padding: 6px;" onclick="window.electronAPI && window.electronAPI.openNeteaseLogin && window.electronAPI.openNeteaseLogin();">🌐 在网易云官方网页窗口中登录</button>
+          </div>
         </div>
 
         <button id="btn-close-qr" class="btn btn-secondary btn-sm" style="margin-top: 16px; width: 100%;" onclick="window.hideQrModal && window.hideQrModal();">关闭</button>
