@@ -24,7 +24,7 @@ function createWindow(port) {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, "preload.js"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
@@ -127,11 +127,25 @@ ipcMain.on("netease:open-login", () => {
 });
 
 app.whenReady().then(() => {
-  const port = Number(process.env.PORT ?? 4178);
+  const basePort = Number(process.env.PORT ?? 4178);
   server = createAppServer();
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`本地服务在 http://127.0.0.1:${port} 启动`);
-    createWindow(port);
+  
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.log(`[Electron Main] 端口 ${basePort} 已被占用，自动分配备用端口启动...`);
+      server.listen(0, "127.0.0.1", () => {
+        const actualPort = server.address().port;
+        console.log(`[Electron Main] 本地服务在 http://127.0.0.1:${actualPort} 启动`);
+        createWindow(actualPort);
+      });
+    } else {
+      console.error("[Electron Main] 服务端启动异常:", err);
+    }
+  });
+
+  server.listen(basePort, "127.0.0.1", () => {
+    console.log(`[Electron Main] 本地服务在 http://127.0.0.1:${basePort} 启动`);
+    createWindow(basePort);
   });
 
   // 全局拦截并自动监听 MUSIC_U 扫码成功 Cookie 的写入

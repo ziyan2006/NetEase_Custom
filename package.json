@@ -9,33 +9,45 @@
   "main": "main.js",
   "scripts": {
     "start": "node server.js",
-    "electron": "npx electron .",
+    "electron": "electron .",
     "test": "node --test test/*.test.js",
-    "pack": "npx @electron/packager . YesMusicDJHelper --platform=win32 --arch=x64 --out=dist_app --overwrite --electron-version=34.3.0",
-    "dist": "npx electron-builder --win nsis --config.electronVersion=34.3.0"
+    "build:dir": "electron-builder --dir",
+    "build:portable": "electron-builder --win portable",
+    "build:nsis": "electron-builder --win nsis",
+    "dist": "electron-builder --win dir portable"
   },
   "build": {
     "appId": "com.yesmusic.djhelper",
     "productName": "YesMusic DJ Helper",
     "directories": {
-      "output": "dist_installer"
+      "output": "dist_app"
     },
+    "asar": true,
+    "asarUnpack": [
+      "**/ffmpeg-static/**",
+      "**/node_modules/ffmpeg-static/**"
+    ],
     "files": [
       "main.js",
-      "preload.js",
+      "preload.cjs",
       "server.js",
       "lib/**/*",
       "public/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "bin/chrome-win",
+        "to": "chrome-win",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
+        "dir",
+        "portable"
       ]
     },
     "nsis": {
@@ -47,9 +59,14 @@
     }
   },
   "dependencies": {
+    "ffmpeg-static": "^5.3.0",
     "puppeteer-core": "^25.7.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer-real-browser": "^1.4.4"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
   }
 }
