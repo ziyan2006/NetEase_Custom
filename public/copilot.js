@@ -9,7 +9,8 @@ const STORAGE_KEY_HISTORY = "yesmusic_copilot_history";
 const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com",
   apiKey: "sk-14d4fe9c926f48bda06a6ec402ff5072",
-  model: "deepseek-v4-flash",
+  model: "deepseek-chat",
+  thinkingEffort: "fast",
   temperature: 0.7,
 };
 
@@ -412,6 +413,27 @@ export function createArtistSetsCardElement(cardData) {
   return card;
 }
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getToolIcon(tool) {
+  switch (tool) {
+    case "1001tl_setlist_scraper": return "🌐";
+    case "genre_trend_radar": return "🔥";
+    case "camelot_harmonic_mixing": return "🎛️";
+    case "live_set_search": return "🎪";
+    case "general_dj_chat": return "✨";
+    default: return "⚡";
+  }
+}
+
 /**
  * 添加消息气泡到 Copilot 消息容器
  */
@@ -435,16 +457,40 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
   const contentArea = document.createElement("div");
   contentArea.className = "message-content-area";
 
-  // 如果有思考过程 (Reasoning)
+  // 工具调用卡片容器
+  const toolsContainer = document.createElement("div");
+  toolsContainer.className = "copilot-tools-container";
+  contentArea.appendChild(toolsContainer);
+
+  // 思考卡片容器
+  let thinkingCard = null;
+  let thinkingBody = null;
+  let thinkingTimerSpan = null;
+  let thinkingTitleSpan = null;
+  let thinkingIcon = null;
+  let reasoningStartTime = Date.now();
+  let reasoningInterval = null;
+  let totalReasoningChars = 0;
+
   if (reasoning) {
-    const reasoningBox = document.createElement("details");
-    reasoningBox.className = "copilot-reasoning-accordion";
-    reasoningBox.open = false;
-    reasoningBox.innerHTML = `
-      <summary class="reasoning-summary">💭 思考过程 (Reasoning)</summary>
-      <div class="reasoning-body">${renderMarkdownToHtml(reasoning)}</div>
+    thinkingCard = document.createElement("div");
+    thinkingCard.className = "copilot-thinking-card is-collapsed";
+    thinkingCard.innerHTML = `
+      <div class="thinking-header">
+        <div class="thinking-title-group">
+          <span class="thinking-icon">🧠</span>
+          <span class="thinking-title">已深度思考 (${reasoning.length} 字)</span>
+        </div>
+        <div class="thinking-meta-group">
+          <span class="thinking-chevron">▼</span>
+        </div>
+      </div>
+      <div class="thinking-body">${renderMarkdownToHtml(reasoning)}</div>
     `;
-    contentArea.appendChild(reasoningBox);
+    thinkingCard.querySelector(".thinking-header").addEventListener("click", () => {
+      thinkingCard.classList.toggle("is-collapsed");
+    });
+    contentArea.appendChild(thinkingCard);
   }
 
   // 正文文本
@@ -468,31 +514,168 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
   // 滚动到底部
   container.scrollTop = container.scrollHeight;
 
+  const toolInstances = new Map();
+
   return {
     messageBox,
     textBody,
     contentArea,
     updateContent: (newText) => {
+      // 当正文开始流式输出时，若思考计时器仍在跑，则停止计时并将思考卡片标记为完成
+      if (reasoningInterval) {
+        clearInterval(reasoningInterval);
+        reasoningInterval = null;
+        if (thinkingCard && thinkingCard.classList.contains("is-streaming")) {
+          thinkingCard.classList.remove("is-streaming");
+          const elapsedSec = ((Date.now() - reasoningStartTime) / 1000).toFixed(1);
+          if (thinkingTitleSpan) {
+            thinkingTitleSpan.textContent = `已深度思考 (耗时 ${elapsedSec}s · ${totalReasoningChars} 字)`;
+          }
+          if (thinkingIcon) {
+            thinkingIcon.innerHTML = "🧠";
+          }
+        }
+      }
       textBody.innerHTML = renderMarkdownToHtml(newText);
       container.scrollTop = container.scrollHeight;
     },
     updateReasoning: (newReasoning) => {
-      let reasoningBox = contentArea.querySelector(".copilot-reasoning-accordion");
-      if (!reasoningBox) {
-        reasoningBox = document.createElement("details");
-        reasoningBox.className = "copilot-reasoning-accordion";
-        reasoningBox.open = true;
-        contentArea.insertBefore(reasoningBox, textBody);
+      totalReasoningChars = newReasoning.length;
+      if (!thinkingCard) {
+        reasoningStartTime = Date.now();
+        thinkingCard = document.createElement("div");
+        thinkingCard.className = "copilot-thinking-card is-streaming";
+        thinkingCard.innerHTML = `
+          <div class="thinking-header">
+            <div class="thinking-title-group">
+              <span class="thinking-icon"><span class="thinking-spinner"></span></span>
+              <span class="thinking-title">深度思考中...</span>
+            </div>
+            <div class="thinking-meta-group">
+              <span class="thinking-timer">0.0s</span>
+              <span class="thinking-chevron">▼</span>
+            </div>
+          </div>
+          <div class="thinking-body"></div>
+        `;
+        thinkingTitleSpan = thinkingCard.querySelector(".thinking-title");
+        thinkingTimerSpan = thinkingCard.querySelector(".thinking-timer");
+        thinkingIcon = thinkingCard.querySelector(".thinking-icon");
+        thinkingBody = thinkingCard.querySelector(".thinking-body");
+
+        thinkingCard.querySelector(".thinking-header").addEventListener("click", () => {
+          thinkingCard.classList.toggle("is-collapsed");
+        });
+
+        // 插入在 textBody 之前
+        contentArea.insertBefore(thinkingCard, textBody);
+
+        reasoningInterval = setInterval(() => {
+          if (thinkingTimerSpan) {
+            const sec = ((Date.now() - reasoningStartTime) / 1000).toFixed(1);
+            thinkingTimerSpan.textContent = `${sec}s`;
+          }
+        }, 100);
       }
-      reasoningBox.innerHTML = `
-        <summary class="reasoning-summary">💭 思考过程 (Reasoning)</summary>
-        <div class="reasoning-body">${renderMarkdownToHtml(newReasoning)}</div>
+
+      if (thinkingBody) {
+        thinkingBody.innerHTML = renderMarkdownToHtml(newReasoning);
+      }
+      container.scrollTop = container.scrollHeight;
+    },
+    startTool: (data) => {
+      const { id, tool, name, params, thought } = data || {};
+      if (!id) return;
+      const toolEl = document.createElement("div");
+      toolEl.className = "copilot-tool-card";
+      toolEl.id = `tool_${id}`;
+      toolEl.dataset.startTime = String(Date.now());
+
+      const icon = getToolIcon(tool);
+      const displayName = name || tool || "技能工具";
+
+      let paramsHtml = "";
+      if (params && Object.keys(params).length > 0) {
+        paramsHtml = `
+          <div class="tool-params-line">
+            <span class="tool-params-label">输入参数:</span>
+            <div class="tool-params-code">${escapeHtml(JSON.stringify(params, null, 2))}</div>
+          </div>
+        `;
+      }
+
+      toolEl.innerHTML = `
+        <div class="tool-header">
+          <div class="tool-title-group">
+            <span class="tool-icon">${icon}</span>
+            <span class="tool-name">${escapeHtml(displayName)}</span>
+          </div>
+          <span class="tool-status-badge status-running">
+            <span class="thinking-spinner" style="width:10px; height:10px; border-width:1.5px;"></span> 执行中...
+          </span>
+        </div>
+        <div class="tool-body">
+          ${thought ? `<div style="color:#cbd5e1; margin-bottom:6px; font-weight:600;">⚡ ${escapeHtml(thought)}</div>` : ""}
+          ${paramsHtml}
+          <div class="tool-logs-container" id="logs_${id}"></div>
+        </div>
       `;
+
+      toolsContainer.appendChild(toolEl);
+      toolInstances.set(id, toolEl);
+      container.scrollTop = container.scrollHeight;
+    },
+    updateToolProgress: (data) => {
+      const { id, message } = data || {};
+      if (!id || !message) return;
+      const toolEl = toolInstances.get(id) || document.getElementById(`tool_${id}`);
+      if (!toolEl) return;
+      const logsBox = toolEl.querySelector(`#logs_${id}`) || toolEl.querySelector(".tool-logs-container");
+      if (logsBox) {
+        const entry = document.createElement("div");
+        entry.className = "tool-log-entry";
+        entry.innerHTML = `<span class="tool-log-dot">▸</span> <span>${escapeHtml(message)}</span>`;
+        logsBox.appendChild(entry);
+        logsBox.scrollTop = logsBox.scrollHeight;
+      }
+      container.scrollTop = container.scrollHeight;
+    },
+    finishTool: (data) => {
+      const { id, status, summary } = data || {};
+      if (!id) return;
+      const toolEl = toolInstances.get(id) || document.getElementById(`tool_${id}`);
+      if (!toolEl) return;
+
+      const startTime = Number(toolEl.dataset.startTime || Date.now());
+      const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      const badge = toolEl.querySelector(".tool-status-badge");
+      if (badge) {
+        if (status === "success") {
+          badge.className = "tool-status-badge status-success";
+          badge.innerHTML = `✔ 完成 (${elapsedSec}s)`;
+        } else {
+          badge.className = "tool-status-badge status-error";
+          badge.innerHTML = `✖ 失败 (${elapsedSec}s)`;
+        }
+      }
+
+      if (summary) {
+        const logsBox = toolEl.querySelector(`#logs_${id}`) || toolEl.querySelector(".tool-logs-container");
+        if (logsBox) {
+          const summaryEntry = document.createElement("div");
+          summaryEntry.className = "tool-log-entry";
+          summaryEntry.style.fontWeight = "700";
+          summaryEntry.style.color = status === "success" ? "#34d399" : "#f87171";
+          summaryEntry.innerHTML = `<span class="tool-log-dot">✨</span> <span>${escapeHtml(summary)}</span>`;
+          logsBox.appendChild(summaryEntry);
+        }
+      }
       container.scrollTop = container.scrollHeight;
     },
     appendCard: (card) => {
       if (!card) return;
-      const existing = contentArea.querySelector(".copilot-preview-card");
+      const existing = contentArea.querySelector(".copilot-preview-card, .copilot-artist-sets-card");
       if (existing) existing.remove();
 
       const cardEl = (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector")
@@ -527,10 +710,10 @@ export async function sendCopilotMessage(userText) {
   chatHistory.push({ role: "user", content: text });
 
   // 切换 UI 状态为生成中
-  sendBtn.style.display = "none";
-  stopBtn.style.display = "inline-flex";
-  indicator.style.display = "inline-flex";
-  indicatorText.textContent = "AI 思考中...";
+  if (sendBtn) sendBtn.style.display = "none";
+  if (stopBtn) stopBtn.style.display = "inline-flex";
+  if (indicator) indicator.style.display = "inline-flex";
+  if (indicatorText) indicatorText.textContent = "AI 正在分析与处理...";
 
   currentAbortController = new AbortController();
 
@@ -586,8 +769,14 @@ export async function sendCopilotMessage(userText) {
           } else if (event.type === "reasoning" && event.data) {
             accumulatedReasoning += event.data;
             aiMsgHandle.updateReasoning(accumulatedReasoning);
+          } else if (event.type === "tool_start" && event.data) {
+            aiMsgHandle.startTool(event.data);
+          } else if (event.type === "tool_progress" && event.data) {
+            aiMsgHandle.updateToolProgress(event.data);
+          } else if (event.type === "tool_result" && event.data) {
+            aiMsgHandle.finishTool(event.data);
           } else if (event.type === "status" && event.data) {
-            indicatorText.textContent = event.data;
+            if (indicatorText) indicatorText.textContent = event.data;
           } else if (event.type === "card" && event.data) {
             console.log("[COPILOT CLIENT] Received card payload:", event.data);
             try {
@@ -597,7 +786,7 @@ export async function sendCopilotMessage(userText) {
             }
           }
         } catch {
-          // ignore
+          // ignore chunk parse error
         }
       }
     }
@@ -611,9 +800,9 @@ export async function sendCopilotMessage(userText) {
     }
   } finally {
     currentAbortController = null;
-    sendBtn.style.display = "inline-flex";
-    stopBtn.style.display = "none";
-    indicator.style.display = "none";
+    if (sendBtn) sendBtn.style.display = "inline-flex";
+    if (stopBtn) stopBtn.style.display = "none";
+    if (indicator) indicator.style.display = "none";
   }
 }
 
@@ -627,6 +816,22 @@ export function initCopilot() {
   const clearBtn = document.getElementById("btn-copilot-clear");
   const settingsBtn = document.getElementById("btn-copilot-settings");
 
+  // 模型 & 推理强度 Popover 与胶囊 Trigger (参考图 UI)
+  const pillTrigger = document.getElementById("model-reasoning-pill-trigger");
+  const popover = document.getElementById("model-reasoning-popover");
+  const pillModelName = document.getElementById("pill-model-name");
+  const pillEffortName = document.getElementById("pill-effort-name");
+
+  const popoverRowModel = document.getElementById("popover-row-model");
+  const popoverModelSubmenu = document.getElementById("popover-model-submenu");
+  const popoverModelText = document.getElementById("popover-model-text");
+
+  const popoverRowEffort = document.getElementById("popover-row-effort");
+  const popoverEffortSubmenu = document.getElementById("popover-effort-submenu");
+  const popoverEffortText = document.getElementById("popover-effort-text");
+
+  const popoverBtnReset = document.getElementById("popover-btn-reset");
+
   // 设置 Modal
   const settingsModal = document.getElementById("modal-copilot-settings");
   const closeSettingsBtn = document.getElementById("btn-close-copilot-settings");
@@ -637,18 +842,248 @@ export function initCopilot() {
 
   const urlInput = document.getElementById("copilot-config-url");
   const keyInput = document.getElementById("copilot-config-key");
+  const modelSelect = document.getElementById("copilot-config-model-select");
   const modelInput = document.getElementById("copilot-config-model");
   const tempInput = document.getElementById("copilot-config-temp");
   const tempValSpan = document.getElementById("temp-val");
 
-  // 加载配置
+  const effortLabelMap = {
+    off: "关闭",
+    low: "低",
+    medium: "中",
+    high: "高",
+  };
+
+  let cachedModels = ["deepseek-v4-flash", "deepseek-v4-pro"];
+
+  function renderModelOptions(models) {
+    const currentModel = getCopilotConfig().model || DEFAULT_CONFIG.model;
+
+    // 1. 更新 Popover 模型子菜单
+    if (popoverModelSubmenu) {
+      popoverModelSubmenu.innerHTML = models
+        .map(
+          (m) =>
+            `<div class="submenu-item ${m === currentModel ? "active" : ""}" data-model="${escapeHtml(m)}">${escapeHtml(m)}</div>`
+        )
+        .join("");
+
+      // 重新绑定点击事件
+      popoverModelSubmenu.querySelectorAll(".submenu-item").forEach((item) => {
+        item.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const targetModel = item.getAttribute("data-model");
+          if (targetModel) {
+            const currentCfg = getCopilotConfig();
+            currentCfg.model = targetModel;
+            saveCopilotConfig(currentCfg);
+            updateUiWithConfig(currentCfg);
+            if (popoverModelSubmenu) popoverModelSubmenu.style.display = "none";
+          }
+        });
+      });
+    }
+
+    // 2. 更新 Modal 中的下拉选择框
+    if (modelSelect) {
+      const customSelected = !models.includes(currentModel);
+      let optionsHtml = models
+        .map((m) => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`)
+        .join("");
+      optionsHtml += `<option value="custom">⚙️ 自定义输入模型名称...</option>`;
+      modelSelect.innerHTML = optionsHtml;
+
+      if (customSelected) {
+        modelSelect.value = "custom";
+        if (modelInput) {
+          modelInput.style.display = "block";
+          modelInput.value = currentModel;
+        }
+      } else {
+        modelSelect.value = currentModel;
+        if (modelInput) modelInput.style.display = "none";
+      }
+    }
+  }
+
+  async function refreshModelsList(silent = true) {
+    const refreshBtn = document.getElementById("btn-refresh-models");
+    if (refreshBtn && !silent) {
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "⏳ 拉取中...";
+    }
+
+    try {
+      const activeCfg = getCopilotConfig();
+      const res = await fetch("/api/agent/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: activeCfg }),
+      });
+      const data = await res.json();
+      if (data && Array.isArray(data.models) && data.models.length > 0) {
+        cachedModels = data.models;
+        renderModelOptions(cachedModels);
+        if (!silent && testStatusEl) {
+          testStatusEl.style.display = "block";
+          testStatusEl.style.background = "rgba(74, 222, 128, 0.15)";
+          testStatusEl.style.color = "#4ade80";
+          testStatusEl.textContent = `✅ 成功从 DeepSeek 拉取到 ${data.models.length} 个可用模型: ${data.models.join(", ")}`;
+        }
+      }
+    } catch (e) {
+      console.warn("[COPILOT] Failed to refresh models:", e);
+    } finally {
+      if (refreshBtn) {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "🔄 在线拉取可用模型";
+      }
+    }
+  }
+
+  function updateUiWithConfig(cfg) {
+    const model = cfg.model || DEFAULT_CONFIG.model;
+    const effort = cfg.thinkingEffort || DEFAULT_CONFIG.thinkingEffort;
+    const effortText = effortLabelMap[effort] || "高";
+
+    // 更新底部胶囊
+    if (pillModelName) pillModelName.textContent = model;
+    if (pillEffortName) pillEffortName.textContent = effortText;
+
+    // 更新 Popover 文本与激活状态
+    if (popoverModelText) popoverModelText.textContent = model;
+    if (popoverEffortText) popoverEffortText.textContent = effortText;
+
+    if (popoverModelSubmenu) {
+      popoverModelSubmenu.querySelectorAll(".submenu-item").forEach((item) => {
+        if (item.getAttribute("data-model") === model) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+    }
+
+    if (popoverEffortSubmenu) {
+      popoverEffortSubmenu.querySelectorAll(".submenu-item").forEach((item) => {
+        if (item.getAttribute("data-effort") === effort) {
+          item.classList.add("active");
+        } else {
+          item.classList.remove("active");
+        }
+      });
+    }
+
+    // 同步到设置对话框
+    if (urlInput) urlInput.value = cfg.baseUrl || DEFAULT_CONFIG.baseUrl;
+    if (keyInput) keyInput.value = cfg.apiKey || DEFAULT_CONFIG.apiKey;
+    if (modelSelect) {
+      if (cachedModels.includes(model)) {
+        modelSelect.value = model;
+        if (modelInput) modelInput.style.display = "none";
+      } else {
+        modelSelect.value = "custom";
+        if (modelInput) {
+          modelInput.style.display = "block";
+          modelInput.value = model;
+        }
+      }
+    }
+    if (tempInput) {
+      tempInput.value = cfg.temperature ?? DEFAULT_CONFIG.temperature;
+      if (tempValSpan) tempValSpan.textContent = tempInput.value;
+    }
+  }
+
+  // 加载初始配置
   const cfg = getCopilotConfig();
-  if (urlInput) urlInput.value = cfg.baseUrl || DEFAULT_CONFIG.baseUrl;
-  if (keyInput) keyInput.value = cfg.apiKey || DEFAULT_CONFIG.apiKey;
-  if (modelInput) modelInput.value = cfg.model || DEFAULT_CONFIG.model;
-  if (tempInput) {
-    tempInput.value = cfg.temperature ?? DEFAULT_CONFIG.temperature;
-    if (tempValSpan) tempValSpan.textContent = tempInput.value;
+  updateUiWithConfig(cfg);
+  renderModelOptions(cachedModels);
+  refreshModelsList(true);
+
+  // 绑定在线拉取按钮
+  const refreshBtn = document.getElementById("btn-refresh-models");
+  refreshBtn?.addEventListener("click", () => {
+    refreshModelsList(false);
+  });
+
+  // Popover 展开/折叠
+  pillTrigger?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!popover) return;
+    const isVisible = popover.style.display === "block";
+    popover.style.display = isVisible ? "none" : "block";
+    if (!isVisible) {
+      refreshModelsList(true);
+    }
+  });
+
+  // 点击外部自动关闭 Popover
+  document.addEventListener("click", (e) => {
+    if (popover && !popover.contains(e.target) && !pillTrigger?.contains(e.target)) {
+      popover.style.display = "none";
+    }
+  });
+
+  // 二级菜单展开切换: 模型
+  popoverRowModel?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!popoverModelSubmenu) return;
+    const isSubVisible = popoverModelSubmenu.style.display === "flex";
+    popoverModelSubmenu.style.display = isSubVisible ? "none" : "flex";
+    if (popoverEffortSubmenu) popoverEffortSubmenu.style.display = "none";
+  });
+
+  // 二级菜单展开切换: 推理强度
+  popoverRowEffort?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!popoverEffortSubmenu) return;
+    const isSubVisible = popoverEffortSubmenu.style.display === "flex";
+    popoverEffortSubmenu.style.display = isSubVisible ? "none" : "flex";
+    if (popoverModelSubmenu) popoverModelSubmenu.style.display = "none";
+  });
+
+  // 二级菜单项点击: 选择推理强度
+  popoverEffortSubmenu?.querySelectorAll(".submenu-item").forEach((item) => {
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const targetEffort = item.getAttribute("data-effort");
+      if (targetEffort) {
+        const currentCfg = getCopilotConfig();
+        currentCfg.thinkingEffort = targetEffort;
+        saveCopilotConfig(currentCfg);
+        updateUiWithConfig(currentCfg);
+        if (popoverEffortSubmenu) popoverEffortSubmenu.style.display = "none";
+      }
+    });
+  });
+
+  // 重置为默认设置
+  popoverBtnReset?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const defaultCfg = { ...DEFAULT_CONFIG };
+    saveCopilotConfig(defaultCfg);
+    updateUiWithConfig(defaultCfg);
+    if (popoverModelSubmenu) popoverModelSubmenu.style.display = "none";
+    if (popoverEffortSubmenu) popoverEffortSubmenu.style.display = "none";
+    if (popover) popover.style.display = "none";
+  });
+
+  // 模型设置 Modal 中的 Select 联动
+  if (modelSelect) {
+    modelSelect.addEventListener("change", () => {
+      if (modelSelect.value === "custom") {
+        if (modelInput) {
+          modelInput.style.display = "block";
+          modelInput.focus();
+        }
+      } else {
+        if (modelInput) {
+          modelInput.style.display = "none";
+          modelInput.value = modelSelect.value;
+        }
+      }
+    });
   }
 
   // 发送与停止
@@ -711,7 +1146,6 @@ export function initCopilot() {
           </div>
         </div>
       `;
-      // 重新绑定药丸
       container.querySelectorAll(".quick-pill-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           const p = btn.getAttribute("data-prompt");
@@ -741,13 +1175,23 @@ export function initCopilot() {
 
   // 保存设置
   saveSettingsBtn?.addEventListener("click", () => {
+    let chosenModel = "deepseek-v4-flash";
+    if (modelSelect && modelSelect.value !== "custom") {
+      chosenModel = modelSelect.value;
+    } else if (modelInput) {
+      chosenModel = modelInput.value.trim() || DEFAULT_CONFIG.model;
+    }
+
+    const currentCfg = getCopilotConfig();
     const updated = {
       baseUrl: urlInput.value.trim() || DEFAULT_CONFIG.baseUrl,
       apiKey: keyInput.value.trim() || DEFAULT_CONFIG.apiKey,
-      model: modelInput.value.trim() || DEFAULT_CONFIG.model,
+      model: chosenModel,
+      thinkingEffort: currentCfg.thinkingEffort || DEFAULT_CONFIG.thinkingEffort,
       temperature: parseFloat(tempInput.value) || 0.7,
     };
     saveCopilotConfig(updated);
+    updateUiWithConfig(updated);
     closeModal();
   });
 
@@ -761,22 +1205,29 @@ export function initCopilot() {
     testStatusEl.textContent = "正在请求大模型 API 端点...";
 
     try {
+      let testModel = "deepseek-v4-flash";
+      if (modelSelect && modelSelect.value !== "custom") {
+        testModel = modelSelect.value;
+      } else if (modelInput) {
+        testModel = modelInput.value.trim() || DEFAULT_CONFIG.model;
+      }
+
       const testConfig = {
         baseUrl: urlInput.value.trim() || DEFAULT_CONFIG.baseUrl,
         apiKey: keyInput.value.trim() || DEFAULT_CONFIG.apiKey,
-        model: modelInput.value.trim() || DEFAULT_CONFIG.model,
+        model: testModel,
       };
 
       const res = await fetch("/api/agent/camelot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: "8A" }),
+        body: JSON.stringify({ key: "8A", config: testConfig }),
       });
 
       if (res.ok) {
         testStatusEl.style.background = "rgba(74, 222, 128, 0.15)";
         testStatusEl.style.color = "#4ade80";
-        testStatusEl.textContent = "✅ 服务端与本地工具链连接正常！API 配置有效。";
+        testStatusEl.textContent = `✅ 服务端与本地工具链连接正常！模型 [${testModel}] 配置有效。`;
       } else {
         throw new Error("服务端返回异常");
       }
@@ -797,3 +1248,5 @@ if (document.readyState === "loading") {
 } else {
   initCopilot();
 }
+
+

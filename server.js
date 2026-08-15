@@ -20,7 +20,7 @@ import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSe
 import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
-import { DEFAULT_LLM_CONFIG } from "./lib/dj-agent/llm-client.js";
+import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
 
 const projectDirectory = fileURLToPath(new URL(".", import.meta.url));
 const publicDirectory = resolve(projectDirectory, "public");
@@ -804,6 +804,23 @@ export function createAppServer() {
         sendJson(response, 200, analysis);
       } catch (err) {
         sendJson(response, 500, { message: "Camelot 调性分析异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/models") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const config = params.config || {};
+        const models = await listAvailableModels(config);
+        sendJson(response, 200, { code: 200, models });
+      } catch (err) {
+        sendJson(response, 200, {
+          code: 200,
+          warning: err.message,
+          models: ["deepseek-v4-flash", "deepseek-v4-pro"],
+        });
       }
       return;
     }

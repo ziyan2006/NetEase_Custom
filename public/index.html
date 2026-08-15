@@ -140,6 +140,54 @@
                   <span id="copilot-status-indicator" class="copilot-indicator" style="display: none;">
                     <span class="indicator-dot"></span> <span id="copilot-indicator-text">正在处理...</span>
                   </span>
+
+                  <!-- 模型与推理强度弹出面板 (UI 完美对标参考图) -->
+                  <div class="model-reasoning-dropdown-wrapper" id="model-reasoning-dropdown-wrapper">
+                    <div class="model-reasoning-popover" id="model-reasoning-popover" style="display: none;">
+                      <!-- 选项 1: 模型 -->
+                      <div class="popover-row" id="popover-row-model">
+                        <span class="popover-label">模型</span>
+                        <div class="popover-value-group">
+                          <span class="popover-value" id="popover-model-text">deepseek-v4-flash</span>
+                          <span class="popover-chevron">›</span>
+                        </div>
+                      </div>
+                      <div class="popover-submenu" id="popover-model-submenu" style="display: none;">
+                        <div class="submenu-item active" data-model="deepseek-v4-flash">deepseek-v4-flash</div>
+                        <div class="submenu-item" data-model="deepseek-v4-pro">deepseek-v4-pro</div>
+                      </div>
+
+                      <!-- 选项 2: 推理强度 -->
+                      <div class="popover-row" id="popover-row-effort">
+                        <span class="popover-label">推理强度</span>
+                        <div class="popover-value-group">
+                          <span class="popover-value" id="popover-effort-text">高</span>
+                          <span class="popover-chevron">›</span>
+                        </div>
+                      </div>
+                      <div class="popover-submenu" id="popover-effort-submenu" style="display: none;">
+                        <div class="submenu-item" data-effort="off">关闭</div>
+                        <div class="submenu-item" data-effort="low">低</div>
+                        <div class="submenu-item" data-effort="medium">中</div>
+                        <div class="submenu-item active" data-effort="high">高</div>
+                      </div>
+
+                      <div class="popover-divider"></div>
+
+                      <!-- 选项 3: 重置为默认设置 -->
+                      <div class="popover-row popover-reset-row" id="popover-btn-reset">
+                        <span class="popover-label-reset">重置为默认设置</span>
+                        <span class="popover-reset-icon">↻</span>
+                      </div>
+                    </div>
+
+                    <!-- 触发胶囊按钮 (参考截图底部) -->
+                    <button type="button" class="model-reasoning-pill-trigger" id="model-reasoning-pill-trigger" title="点击切换模型与推理强度">
+                      <span class="pill-model-name" id="pill-model-name">deepseek-v4-flash</span>
+                      <span class="pill-effort-name" id="pill-effort-name">高</span>
+                    </button>
+                  </div>
+
                   <button id="btn-copilot-send" class="btn btn-primary btn-sm btn-copilot-action">
                     <span>🚀 发送</span>
                   </button>
@@ -435,8 +483,16 @@
             <small style="color: var(--text-muted); font-size: 11px; margin-top: 4px; display: block;">安全保存在本地 LocalStorage 中，不会泄露至外部</small>
           </div>
           <div class="form-group" style="margin-bottom: 14px;">
-            <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">模型名称 (Model):</label>
-            <input id="copilot-config-model" class="input-box" type="text" value="deepseek-v4-flash" placeholder="例如 deepseek-v4-flash, deepseek-chat, gpt-4o" style="margin-top: 6px;" />
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary); margin: 0;">模型预设 (Model):</label>
+              <button type="button" id="btn-refresh-models" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 11px; height: 22px;">🔄 在线拉取可用模型</button>
+            </div>
+            <select id="copilot-config-model-select" class="input-box" style="margin-top: 6px; width: 100%; font-weight: 600;">
+              <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+              <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+              <option value="custom">⚙️ 自定义输入模型名称...</option>
+            </select>
+            <input id="copilot-config-model" class="input-box" type="text" value="deepseek-v4-flash" placeholder="例如 deepseek-v4-flash, deepseek-v4-pro" style="margin-top: 6px; display: none;" />
           </div>
           <div class="form-group" style="margin-bottom: 14px;">
             <label class="form-label" style="font-size: 12px; font-weight: 700; color: var(--text-secondary); display: flex; justify-content: space-between;">

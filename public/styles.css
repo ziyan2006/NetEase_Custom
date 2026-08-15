@@ -1069,7 +1069,264 @@ select.input-box option {
 
 .copilot-header-actions {
   display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Thinking Intensity / Effort Segmented Picker */
+.copilot-effort-picker {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 2px 4px;
+  gap: 2px;
+}
+
+.effort-pill {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+
+.effort-pill:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.effort-pill.active {
+  background: linear-gradient(135deg, rgba(234, 68, 83, 0.3) 0%, rgba(234, 68, 83, 0.15) 100%);
+  border: 1px solid rgba(234, 68, 83, 0.6);
+  color: #ffffff;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(234, 68, 83, 0.3);
+}
+
+/* Thinking (Reasoning) Card - Codex / DeepSeek R1 Style */
+.copilot-thinking-card {
+  background: rgba(18, 18, 26, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 3px solid rgba(234, 68, 83, 0.8);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+
+.copilot-thinking-card.is-streaming {
+  border-color: rgba(234, 68, 83, 0.4);
+  box-shadow: 0 0 16px rgba(234, 68, 83, 0.1);
+}
+
+.thinking-header {
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(255, 255, 255, 0.02);
+  transition: background 0.15s;
+}
+
+.thinking-header:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.thinking-title-group {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.thinking-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(234, 68, 83, 0.3);
+  border-top-color: var(--brand-red);
+  border-radius: 50%;
+  animation: spinSmooth 0.8s linear infinite;
+  display: inline-block;
+}
+
+.thinking-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.thinking-timer {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.thinking-chevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.copilot-thinking-card.is-collapsed .thinking-chevron {
+  transform: rotate(-90deg);
+}
+
+.copilot-thinking-card.is-collapsed .thinking-body {
+  display: none;
+}
+
+.thinking-body {
+  padding: 10px 14px 12px 14px;
+  margin-top: 0;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 360px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(0, 0, 0, 0.2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Tool Execution Card - Codex / Claude Code Style */
+.copilot-tool-card {
+  background: rgba(15, 17, 26, 0.85);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.tool-header {
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.tool-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-icon {
+  font-size: 14px;
+}
+
+.tool-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.tool-status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tool-status-badge.status-running {
+  background: rgba(59, 130, 246, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.tool-status-badge.status-success {
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.tool-status-badge.status-error {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.tool-body {
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.tool-params-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tool-params-label {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.tool-params-code {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  word-break: break-all;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.tool-logs-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.tool-log-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.tool-log-dot {
+  color: #60a5fa;
+}
+
+@keyframes spinSmooth {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Messages Scrollable Area */
@@ -1549,8 +1806,180 @@ select.input-box option {
   to { opacity: 1; transform: scale(1.2); }
 }
 
-.btn-copilot-action {
+/* Model & Reasoning Effort Dropdown Trigger & Popover (UI Exact Match) */
+.model-reasoning-dropdown-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   margin-left: auto;
+  margin-right: 10px;
+}
+
+/* Trigger Pill Button (matching the rounded capsule in screenshot) */
+.model-reasoning-pill-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-secondary);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.model-reasoning-pill-trigger:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.model-reasoning-pill-trigger .pill-model-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.model-reasoning-pill-trigger .pill-effort-name {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+/* Popover Floating Card (exact match of screenshot card layout) */
+.model-reasoning-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 0;
+  width: 250px;
+  background: #1c1c26;
+  color: #f1f5f9;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 6px 0;
+  z-index: 100;
+  animation: popoverFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.popover-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.popover-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.popover-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.popover-value-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.popover-value {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.popover-chevron {
+  font-size: 15px;
+  color: #64748b;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.popover-submenu {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  margin: 4px 12px 8px 12px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.popover-submenu .submenu-item {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.popover-submenu .submenu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+}
+
+.popover-submenu .submenu-item.active {
+  color: var(--brand-red);
+  font-weight: 700;
+  background: rgba(234, 68, 83, 0.12);
+}
+
+.popover-submenu .submenu-item.active::after {
+  content: "✓";
+  font-size: 11px;
+}
+
+.popover-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 6px 14px;
+}
+
+.popover-reset-row {
+  color: #94a3b8;
+  transition: all 0.15s ease;
+}
+
+.popover-reset-row:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.popover-label-reset {
+  font-size: 13px;
+  color: #94a3b8;
+}
+
+.popover-reset-icon {
+  font-size: 15px;
+  color: #94a3b8;
+  display: inline-block;
+  transition: transform 0.35s ease;
+}
+
+.popover-reset-row:hover .popover-reset-icon {
+  transform: rotate(180deg);
+  color: var(--brand-red);
+}
+
+@keyframes popoverFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.btn-copilot-action {
   font-weight: 700;
   padding: 6px 16px;
 }
