@@ -11,7 +11,7 @@
 - DJ Copilot：流式对话、SQLite 会话历史、模型设置和工具执行记录
 - 1001Tracklists 现场曲目单解析、网易云曲目匹配和歌单创建
 - Camelot 调性轮盘与 BPM 过渡建议
-- 多源热单雷达：整合 Deezer、Spotify、Last.fm、Apple Music 与 Beatport，并支持缓存和降级
+- 热单雷达：基于内置流派档案和 DJ Copilot 的模型策展，生成可匹配网易云的选曲建议
 
 ## 技术栈
 
@@ -43,15 +43,14 @@ Electron 会启动本机服务。若默认端口已被占用，会自动选择�
 
 ## DJ Copilot 配置
 
-Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设置中填写 API Base URL、API Key、模型名与思考强度；配置仅存储在本机浏览器本地存储中。
+Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设置中填写 API Base URL、API Key、模型名与思考强度；配置仅存储在浏览器本地存储中。
 
-支持 DeepSeek、OpenAI、通义千问和 Ollama 兼容端点。1001Tracklists 与 Beatport 等外部数据源可能受网络、登录状态和站点反爬策略影响；Beatport Cookie 可在 Copilot 设置中保存或清除。
+支持 DeepSeek、OpenAI、通义千问和 Ollama 兼容端点。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
 
 ## 本地数据
 
 - Electron 会话数据库：系统应用数据目录下的 `sessions.db`
 - 非 Electron 运行时会话数据库：`data/sessions.db`
-- 热单雷达缓存：`data/charts_cache/`，默认有效期为 6 小时
 - 1001Tracklists 登录 Cookie 缓存：`data/1001tl_session_cookies.json`
 
 这些运行数据不应提交到版本控制。
@@ -62,7 +61,7 @@ Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设�
 npm test
 ```
 
-测试使用 Node.js 内置测试运行器。涉及 Agent 路由、模型服务或实时榜单抓取的测试需要有效网络和可用的模型配置；建议在 CI 中为这些依赖提供 mock 或单独标记为集成测试。
+测试使用 Node.js 内置测试运行器。涉及 Agent 路由、模型服务或外部曲目单抓取的测试需要有效网络和可用的模型配置；建议在 CI 中为这些依赖提供 mock 或单独标记为集成测试。
 
 ## Windows 打包
 
