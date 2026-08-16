@@ -1,0 +1,271 @@
+{
+  "fetchedAt": 1786864249028,
+  "payload": {
+    "genreKey": "drum_and_bass",
+    "genreName": "Drum And Bass",
+    "tracks": [
+      {
+        "artist": "Tame Impala",
+        "title": "Dracula (JENNIE Remix)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 1,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3818963601",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/b868399da682f34dcd7d98af1c0de80b/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Tame Impala Dracula JENNIE Remix",
+        "dedupKey": "tameimpala|dracula",
+        "fusionScore": 0.1
+      },
+      {
+        "artist": "Disco Lines",
+        "title": "No Broke Boys",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 2,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3410229851",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/87001d51243fd7164a02a74cb38e2e4c/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Disco Lines No Broke Boys",
+        "dedupKey": "discolines|nobrokeboys",
+        "fusionScore": 0.098
+      },
+      {
+        "artist": "ANOTR",
+        "title": "Talk To You (ft. 54 Ultra)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 3,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3784724892",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/ab1abe2d073bf5a55943ccc6dff8bcdc/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "ANOTR Talk To You ft. 54 Ultra",
+        "dedupKey": "anotr|talktoyou",
+        "fusionScore": 0.096
+      },
+      {
+        "artist": "Whitney Houston",
+        "title": "I Wanna Dance with Somebody (Who Loves Me)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 4,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/2069073587",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/0a9ca37020494e89898c68f617ca396a/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Whitney Houston I Wanna Dance with Somebody Who Loves Me",
+        "dedupKey": "whitneyhouston|iwannadancewithsomebody",
+        "fusionScore": 0.094
+      },
+      {
+        "artist": "Bebe Rexha",
+        "title": "New Religion",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 5,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3850680281",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/44fcf0e5b0e84a25c0dd7969ce63ecca/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Bebe Rexha New Religion",
+        "dedupKey": "beberexha|newreligion",
+        "fusionScore": 0.092
+      },
+      {
+        "artist": "John Summit",
+        "title": "DON'T BELIEVE IT",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 6,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3952274861",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/76ed4b1474f22603e336fb69f6621a72/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "John Summit DON'T BELIEVE IT",
+        "dedupKey": "johnsummit|dontbelieveit",
+        "fusionScore": 0.09
+      },
+      {
+        "artist": "Bebe Rexha",
+        "title": "One Day",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 7,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/4075933011",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/efa7cb9bc998239ff6ff0fc8be3cc17b/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Bebe Rexha One Day",
+        "dedupKey": "beberexha|oneday",
+        "fusionScore": 0.088
+      },
+      {
+        "artist": "Tove Lo",
+        "title": "Borderline",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 8,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/2136506587",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/1cb863f7ecb8d63b6a8ee38c82999637/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Tove Lo Borderline",
+        "dedupKey": "tovelo|borderline",
+        "fusionScore": 0.086
+      },
+      {
+        "artist": "Charli xcx",
+        "title": "360",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 9,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/2790796972",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/88f6110a98a4ae39a727117ff8f1d400/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Charli xcx 360",
+        "dedupKey": "charlixcx|360",
+        "fusionScore": 0.084
+      },
+      {
+        "artist": "Disclosure",
+        "title": "Deeper",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 10,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3641820152",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/b668fa7a2db4885a9b9aff8129045f37/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Disclosure Deeper",
+        "dedupKey": "disclosure|deeper",
+        "fusionScore": 0.082
+      },
+      {
+        "artist": "Lost Frequencies",
+        "title": "Black Friday (pretty like the sun)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 11,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/2871900192",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/cb772a4c493373a4c6b630305aa7588f/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Lost Frequencies Black Friday pretty like the sun",
+        "dedupKey": "lostfrequencies|blackfriday",
+        "fusionScore": 0.08
+      },
+      {
+        "artist": "Avicii",
+        "title": "Wake Me Up",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 12,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/70266756",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/ec97306735b46ec334e0ce562290775b/250x250-000000-80-0-0.jpg",
+        "genre": "drum_and_bass",
+        "searchQuery": "Avicii Wake Me Up",
+        "dedupKey": "avicii|wakemeup",
+        "fusionScore": 0.078
+      }
+    ],
+    "sources": [
+      "deezer"
+    ],
+    "sourceLabels": [
+      "Deezer Dance 全球榜"
+    ],
+    "fetchedAt": 1786864249024,
+    "elapsedMs": 12985,
+    "cached": false,
+    "degraded": false
+  }
+}

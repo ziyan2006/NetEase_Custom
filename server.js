@@ -18,6 +18,7 @@ import { downloadAndExportTrack } from "./lib/audio-exporter.js";
 import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
 import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
 import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
+import { getRadarTracks } from "./lib/dj-agent/radar/radar-pipeline.js";
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
@@ -962,10 +963,27 @@ export function createAppServer() {
         const params = JSON.parse(bodyStr || "{}");
         const { genre, cookie = "" } = params;
 
-        const genreData = await getTrendingTracksByGenre(genre);
-        const matchRes = await batchMatchTracklist(genreData.tracks, cookie);
+        // 真实数据管道 (多平台抓取 + 融合排序)
+        const radar = await getRadarTracks(genre || "mainstage_edm");
+        const matchTargets = radar.tracks.map((t, idx) => ({
+          trackNumber: idx + 1,
+          artist: t.artist,
+          title: t.title,
+          remix: t.version || "",
+          searchQuery: t.searchQuery,
+        }));
+        const matchRes = await batchMatchTracklist(matchTargets, cookie);
+
         sendJson(response, 200, {
-          genreData,
+          genreData: {
+            genreId: radar.genreKey,
+            name: radar.genreName,
+            tracks: radar.tracks,
+            sources: radar.sourceLabels,
+            fetchedAt: radar.fetchedAt,
+            cached: radar.cached,
+            degraded: radar.degraded,
+          },
           matchRes,
         });
       } catch (err) {

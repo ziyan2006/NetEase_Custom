@@ -1,0 +1,271 @@
+{
+  "fetchedAt": 1786864422450,
+  "payload": {
+    "genreKey": "tech_house",
+    "genreName": "Tech House",
+    "tracks": [
+      {
+        "artist": "Beyoncé",
+        "title": "BREAK MY SOUL",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 1,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/1797297127",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/06be28c0e33aeae38935f54565fec264/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Beyoncé BREAK MY SOUL",
+        "dedupKey": "beyoncé|breakmysoul",
+        "fusionScore": 0.1
+      },
+      {
+        "artist": "Milky",
+        "title": "Just The Way You Are (David Guetta Remix)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 2,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3925244121",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/618564c8d63da0a614123c8eaaebb4c4/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Milky Just The Way You Are David Guetta Remix",
+        "dedupKey": "milky|justthewayyouare",
+        "fusionScore": 0.098
+      },
+      {
+        "artist": "HUGEL",
+        "title": "Temptation",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 3,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/4125020871",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/fcc85ed45a3db0bad4c89e2d327f244d/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "HUGEL Temptation",
+        "dedupKey": "hugel|temptation",
+        "fusionScore": 0.096
+      },
+      {
+        "artist": "D.O.D",
+        "title": "Careful",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 4,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/4167367352",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/349cb545bf2f184ab7a662ecc0f023bc/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "D.O.D Careful",
+        "dedupKey": "dod|careful",
+        "fusionScore": 0.094
+      },
+      {
+        "artist": "James Hype",
+        "title": "More Than Friends (feat. Kelli-Leigh)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 5,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/376386131",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/63451839c5a4a886958e4f3e65cd3b43/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "James Hype More Than Friends feat. Kelli-Leigh",
+        "dedupKey": "jameshype|morethanfriends",
+        "fusionScore": 0.092
+      },
+      {
+        "artist": "Jonas Blue",
+        "title": "Fast Car",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 6,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/114396428",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/5b6570f1d260d76af29e1d5d76546728/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Jonas Blue Fast Car",
+        "dedupKey": "jonasblue|fastcar",
+        "fusionScore": 0.09
+      },
+      {
+        "artist": "FISHER",
+        "title": "What A Life (feat. Florence Arman)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 7,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/4059360701",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/5113f91d93cf044c2b657ab86175a7ad/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "FISHER What A Life feat. Florence Arman",
+        "dedupKey": "fisher|whatalife",
+        "fusionScore": 0.088
+      },
+      {
+        "artist": "Kygo",
+        "title": "Woke Up in Love",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 8,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/1896376597",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/4c4daa1df3f4b3dde89592c8079ac46f/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Kygo Woke Up in Love",
+        "dedupKey": "kygo|wokeupinlove",
+        "fusionScore": 0.086
+      },
+      {
+        "artist": "D.O.D",
+        "title": "Closure",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 9,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3990310081",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/8a3a5044c93eba96a8ffbba4c45ef45d/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "D.O.D Closure",
+        "dedupKey": "dod|closure",
+        "fusionScore": 0.084
+      },
+      {
+        "artist": "Becky Hill",
+        "title": "More! More! More!",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 10,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/4034180331",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/72023565c6e2a9f9a1fda113aacc7bd8/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Becky Hill More! More! More!",
+        "dedupKey": "beckyhill|moremoremore",
+        "fusionScore": 0.082
+      },
+      {
+        "artist": "Łaszewo",
+        "title": "GIMME LOVE",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 11,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/3948851241",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/ebacce57b0271fc81de3dd77389acf35/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Łaszewo GIMME LOVE",
+        "dedupKey": "łaszewo|gimmelove",
+        "fusionScore": 0.08
+      },
+      {
+        "artist": "Eliza Rose",
+        "title": "B.O.T.A. (Baddest Of Them All) (Edit)",
+        "version": "Original Mix",
+        "label": null,
+        "bpm": null,
+        "key": null,
+        "camelot": null,
+        "source": "deezer",
+        "sources": [
+          "deezer"
+        ],
+        "rank": 12,
+        "releaseDate": null,
+        "url": "https://www.deezer.com/track/1862856447",
+        "coverUrl": "https://cdn-images.dzcdn.net/images/cover/be372a6957e4a9ecfc0cf59347c7968f/250x250-000000-80-0-0.jpg",
+        "genre": "tech_house",
+        "searchQuery": "Eliza Rose B.O.T.A. Baddest Of Them All Edit",
+        "dedupKey": "elizarose|bota",
+        "fusionScore": 0.078
+      }
+    ],
+    "sources": [
+      "deezer"
+    ],
+    "sourceLabels": [
+      "Deezer Deep House 电台"
+    ],
+    "fetchedAt": 1786864422449,
+    "elapsedMs": 12970,
+    "cached": false,
+    "degraded": false
+  }
+}
