@@ -16,3 +16,6 @@ bin/chrome-linux/
 
 # Chrome launcher 用户数据残留
 lighthouse.*/
+
+# 榜单数据缓存
+data/charts_cache/
