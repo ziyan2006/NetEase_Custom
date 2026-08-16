@@ -1382,7 +1382,6 @@ export async function initCopilot() {
     }
     if (testStatusEl) testStatusEl.style.display = "none";
     refreshModelsList(true);
-    refreshBeatportCookieStatus();
   };
   const closeModal = () => {
     if (settingsModal) {
@@ -1395,61 +1394,6 @@ export async function initCopilot() {
   cancelSettingsBtn?.addEventListener("click", closeModal);
   settingsModal?.addEventListener("click", (e) => {
     if (e.target === settingsModal) closeModal();
-  });
-
-  // ---- Beatport Cookie 直连 (仿照网易云 MUSIC_U 直登) ----
-  const beatportStatusEl = document.getElementById("beatport-cookie-status");
-  const beatportInputEl = document.getElementById("beatport-cookie-input");
-  const saveBeatportBtn = document.getElementById("btn-save-beatport-cookie");
-  const clearBeatportBtn = document.getElementById("btn-clear-beatport-cookie");
-
-  async function refreshBeatportCookieStatus() {
-    if (!beatportStatusEl) return;
-    try {
-      const res = await fetch("/api/agent/beatport-cookie");
-      const data = await res.json();
-      beatportStatusEl.textContent = data.configured
-        ? `✅ 已配置 (${data.cookieCount} 个 Cookie, 用于 Beatport v4 API 请求)`
-        : "⚠️ 未配置 — 热单雷达将无法获取 Beatport 流派 Top 100";
-    } catch {
-      beatportStatusEl.textContent = "状态: 检测失败";
-    }
-  }
-
-  saveBeatportBtn?.addEventListener("click", async () => {
-    const cookie = (beatportInputEl?.value || "").trim();
-    if (!cookie) {
-      beatportStatusEl.textContent = "⚠️ 请先粘贴 Cookie 内容";
-      return;
-    }
-    try {
-      const res = await fetch("/api/agent/beatport-cookie", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cookie }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        beatportStatusEl.textContent = `✅ 已保存 (${data.cookieCount} 个 Cookie)`;
-        if (beatportInputEl) beatportInputEl.value = "";
-        // 清理缓存, 下次雷达请求立即用新 Cookie 抓取
-        await fetch("/api/agent/clear-chart-cache", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "all" }) }).catch(() => {});
-      } else {
-        beatportStatusEl.textContent = `❌ ${data.message || "保存失败"}`;
-      }
-    } catch (err) {
-      beatportStatusEl.textContent = `❌ ${err.message}`;
-    }
-  });
-
-  clearBeatportBtn?.addEventListener("click", async () => {
-    try {
-      await fetch("/api/agent/beatport-cookie", { method: "DELETE" });
-      beatportStatusEl.textContent = "✅ 已清除 Beatport Cookie";
-      await fetch("/api/agent/clear-chart-cache", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: "all" }) }).catch(() => {});
-    } catch (err) {
-      beatportStatusEl.textContent = `❌ ${err.message}`;
-    }
   });
 
   tempInput?.addEventListener("input", () => {

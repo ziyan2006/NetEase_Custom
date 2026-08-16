@@ -19,12 +19,6 @@ import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
 import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
 import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
 import { getRadarTracks } from "./lib/dj-agent/radar/radar-pipeline.js";
-import { clearChartCache, clearAllChartCaches } from "./lib/dj-agent/radar/cache.js";
-import {
-  saveBeatportCookieHeader,
-  getBeatportCookieStatus,
-  clearBeatportCookies,
-} from "./lib/dj-agent/radar/sources/beatport-source.js";
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
@@ -961,47 +955,6 @@ export function createAppServer() {
     if (request.method === "GET" && urlObj.pathname === "/api/agent/trend-genres") {
       sendJson(response, 200, { genres: getAvailableGenres() });
       return;
-    }
-
-    // ===== 榜单缓存管理 =====
-    if (request.method === "POST" && urlObj.pathname === "/api/agent/clear-chart-cache") {
-      try {
-        const bodyStr = await readJsonBody(request);
-        const params = JSON.parse(bodyStr || "{}");
-        if (params.key === "all") {
-          clearAllChartCaches();
-        } else if (params.key) {
-          clearChartCache(params.key);
-        }
-        sendJson(response, 200, { ok: true });
-      } catch (err) {
-        sendJson(response, 500, { message: "清空榜单缓存失败: " + err.message });
-      }
-      return;
-    }
-
-    // ===== Beatport Cookie 直连 (仿照网易云 MUSIC_U 直登) =====
-    if (urlObj.pathname === "/api/agent/beatport-cookie") {
-      if (request.method === "GET") {
-        sendJson(response, 200, getBeatportCookieStatus());
-        return;
-      }
-      if (request.method === "POST") {
-        try {
-          const bodyStr = await readJsonBody(request);
-          const params = JSON.parse(bodyStr || "{}");
-          const ok = saveBeatportCookieHeader(params.cookie || "");
-          sendJson(response, ok ? 200 : 400, ok ? { ok: true, ...getBeatportCookieStatus() } : { message: "Cookie 为空或格式无效" });
-        } catch (err) {
-          sendJson(response, 500, { message: "保存 Beatport Cookie 失败: " + err.message });
-        }
-        return;
-      }
-      if (request.method === "DELETE") {
-        clearBeatportCookies();
-        sendJson(response, 200, { ok: true, ...getBeatportCookieStatus() });
-        return;
-      }
     }
 
     if (request.method === "POST" && urlObj.pathname === "/api/agent/trend-radar") {
