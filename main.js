@@ -134,6 +134,8 @@ ipcMain.on("netease:open-login", () => {
 });
 
 app.whenReady().then(() => {
+  // 会话数据库写入 userData 目录 (打包后安装目录为只读, 不能使用 cwd)
+  process.env.SESSION_DB_PATH = path.join(app.getPath("userData"), "sessions.db");
   const basePort = Number(process.env.PORT ?? 4178);
   server = createAppServer();
   

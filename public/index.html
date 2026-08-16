@@ -82,7 +82,7 @@
             <!-- 顶部控制条 -->
             <div class="copilot-header-bar">
               <div class="copilot-title-box">
-                <span class="copilot-sparkle-icon">✨</span>
+                <button id="btn-toggle-sidebar" class="sidebar-toggle-btn" title="展开/收起会话列表">☰</button>
                 <div>
                   <div class="copilot-main-title">YesMusic DJ Copilot</div>
                   <div class="copilot-sub-title">1001TL 现场克隆 · 风格热单雷达 · Camelot 调性过渡 · 智能歌单编排</div>
@@ -92,108 +92,124 @@
                 <button id="btn-copilot-settings" class="btn btn-secondary btn-sm" title="大模型 API 配置">
                   <span>⚙️ 模型配置</span>
                 </button>
-                <button id="btn-copilot-clear" class="btn btn-secondary btn-sm" title="清空对话记录">
-                  <span>🧹 清空记录</span>
-                </button>
               </div>
             </div>
 
-            <!-- 消息流容器 -->
-            <div id="copilot-messages" class="copilot-messages-container">
-              <!-- 初始欢迎卡片与推荐 Prompt -->
-              <div class="copilot-welcome-card">
-                <div class="welcome-badge">🎧 DJ 智能助手已就绪</div>
-                <h3 class="welcome-heading">有什么可以协助您的 DJ 工作流？</h3>
-                <p class="welcome-desc">
-                  支持直接发送 1001Tracklists 现场链接自动逆向还原歌单、一键检索 Beatport 风格榜单、Camelot 调性和谐度过渡建议或自然语言选曲排歌。
-                </p>
-                <div class="copilot-quick-pills">
-                  <button class="quick-pill-btn" data-prompt="https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage-tomorrowland-belgium-weekend-1-2023-07-22.html">
-                    🎸 解析 1001TL 现场 Setlist
-                  </button>
-                  <button class="quick-pill-btn" data-prompt="帮我整理本周 Beatport 最热门的 Melodic Techno 单曲">
-                    🌌 本周 Melodic Techno 热单
-                  </button>
-                  <button class="quick-pill-btn" data-prompt="帮我推荐本周 Tech House 风格的热门单曲">
-                    ⚡ Tech House 趋势雷达
-                  </button>
-                  <button class="quick-pill-btn" data-prompt="推荐适合接在 126 BPM 8A 后的 Camelot 调性与混音方案">
-                    🎛️ 8A 调性过渡建议
-                  </button>
-                  <button class="quick-pill-btn" data-prompt="做一张适合 128BPM 峰值时段 (Peak Time) 的高能量 Bass House 歌单">
-                    🔊 128 BPM 场景排歌
+            <!-- 主体: 左侧会话栏 + 对话主区域 -->
+            <div class="copilot-body">
+              <!-- 左侧会话列表 (Codex 风格) -->
+              <aside id="session-sidebar" class="session-sidebar">
+                <div class="session-sidebar-header">
+                  <button id="btn-new-session" class="new-session-btn" title="新建会话">
+                    <span class="new-session-plus">＋</span> 新建会话
                   </button>
                 </div>
-              </div>
-            </div>
+                <div id="session-list" class="session-list"></div>
+                <div class="session-sidebar-footer">
+                  <span class="session-sidebar-hint">会话数据本地持久化</span>
+                </div>
+              </aside>
 
-            <!-- 底部输入框 -->
-            <div class="copilot-input-wrapper">
-              <div class="copilot-input-box">
-                <textarea
-                  id="copilot-input"
-                  class="copilot-textarea"
-                  placeholder="输入 1001Tracklists 链接、风格找歌指令、或调性过渡分析... (Shift+Enter 换行，Enter 发送)"
-                  rows="1"
-                ></textarea>
-                <div class="copilot-input-controls">
-                  <span id="copilot-status-indicator" class="copilot-indicator" style="display: none;">
-                    <span class="indicator-dot"></span> <span id="copilot-indicator-text">正在处理...</span>
-                  </span>
-
-                  <!-- 模型与推理强度弹出面板 (UI 完美对标参考图) -->
-                  <div class="model-reasoning-dropdown-wrapper" id="model-reasoning-dropdown-wrapper">
-                    <div class="model-reasoning-popover" id="model-reasoning-popover" style="display: none;">
-                      <!-- 选项 1: 模型 -->
-                      <div class="popover-row" id="popover-row-model">
-                        <span class="popover-label">模型</span>
-                        <div class="popover-value-group">
-                          <span class="popover-value" id="popover-model-text">deepseek-v4-flash</span>
-                          <span class="popover-chevron">›</span>
-                        </div>
-                      </div>
-                      <div class="popover-submenu" id="popover-model-submenu" style="display: none;">
-                        <div class="submenu-item active" data-model="deepseek-v4-flash">deepseek-v4-flash</div>
-                        <div class="submenu-item" data-model="deepseek-v4-pro">deepseek-v4-pro</div>
-                      </div>
-
-                      <!-- 选项 2: 推理强度 -->
-                      <div class="popover-row" id="popover-row-effort">
-                        <span class="popover-label">推理强度</span>
-                        <div class="popover-value-group">
-                          <span class="popover-value" id="popover-effort-text">高</span>
-                          <span class="popover-chevron">›</span>
-                        </div>
-                      </div>
-                      <div class="popover-submenu" id="popover-effort-submenu" style="display: none;">
-                        <div class="submenu-item" data-effort="off">关闭</div>
-                        <div class="submenu-item" data-effort="low">低</div>
-                        <div class="submenu-item" data-effort="medium">中</div>
-                        <div class="submenu-item active" data-effort="high">高</div>
-                      </div>
-
-                      <div class="popover-divider"></div>
-
-                      <!-- 选项 3: 重置为默认设置 -->
-                      <div class="popover-row popover-reset-row" id="popover-btn-reset">
-                        <span class="popover-label-reset">重置为默认设置</span>
-                        <span class="popover-reset-icon">↻</span>
-                      </div>
+              <!-- 对话主区域 -->
+              <div class="copilot-main">
+                <!-- 消息流容器 -->
+                <div id="copilot-messages" class="copilot-messages-container">
+                  <!-- 初始欢迎卡片与推荐 Prompt -->
+                  <div class="copilot-welcome-card">
+                    <div class="welcome-badge">🎧 DJ 智能助手已就绪</div>
+                    <h3 class="welcome-heading">有什么可以协助您的 DJ 工作流？</h3>
+                    <p class="welcome-desc">
+                      支持直接发送 1001Tracklists 现场链接自动逆向还原歌单、一键检索 Beatport 风格榜单、Camelot 调性和谐度过渡建议或自然语言选曲排歌。
+                    </p>
+                    <div class="copilot-quick-pills">
+                      <button class="quick-pill-btn" data-prompt="https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage-tomorrowland-belgium-weekend-1-2023-07-22.html">
+                        🎸 解析 1001TL 现场 Setlist
+                      </button>
+                      <button class="quick-pill-btn" data-prompt="帮我整理本周 Beatport 最热门的 Melodic Techno 单曲">
+                        🌌 本周 Melodic Techno 热单
+                      </button>
+                      <button class="quick-pill-btn" data-prompt="帮我推荐本周 Tech House 风格的热门单曲">
+                        ⚡ Tech House 趋势雷达
+                      </button>
+                      <button class="quick-pill-btn" data-prompt="推荐适合接在 126 BPM 8A 后的 Camelot 调性与混音方案">
+                        🎛️ 8A 调性过渡建议
+                      </button>
+                      <button class="quick-pill-btn" data-prompt="做一张适合 128BPM 峰值时段 (Peak Time) 的高能量 Bass House 歌单">
+                        🔊 128 BPM 场景排歌
+                      </button>
                     </div>
-
-                    <!-- 触发胶囊按钮 (参考截图底部) -->
-                    <button type="button" class="model-reasoning-pill-trigger" id="model-reasoning-pill-trigger" title="点击切换模型与推理强度">
-                      <span class="pill-model-name" id="pill-model-name">deepseek-v4-flash</span>
-                      <span class="pill-effort-name" id="pill-effort-name">高</span>
-                    </button>
                   </div>
+                </div>
 
-                  <button id="btn-copilot-send" class="btn btn-primary btn-sm btn-copilot-action">
-                    <span>🚀 发送</span>
-                  </button>
-                  <button id="btn-copilot-stop" class="btn btn-secondary btn-sm btn-copilot-action" style="display: none;">
-                    <span>⏹ 停止</span>
-                  </button>
+                <!-- 底部输入框 -->
+                <div class="copilot-input-wrapper">
+                  <div class="copilot-input-box">
+                    <textarea
+                      id="copilot-input"
+                      class="copilot-textarea"
+                      placeholder="输入 1001Tracklists 链接、风格找歌指令、或调性过渡分析... (Shift+Enter 换行，Enter 发送)"
+                      rows="1"
+                    ></textarea>
+                    <div class="copilot-input-controls">
+                      <span id="copilot-status-indicator" class="copilot-indicator" style="display: none;">
+                        <span class="indicator-dot"></span> <span id="copilot-indicator-text">正在处理...</span>
+                      </span>
+
+                      <!-- 模型与推理强度弹出面板 (UI 完美对标参考图) -->
+                      <div class="model-reasoning-dropdown-wrapper" id="model-reasoning-dropdown-wrapper">
+                        <div class="model-reasoning-popover" id="model-reasoning-popover" style="display: none;">
+                          <!-- 选项 1: 模型 -->
+                          <div class="popover-row" id="popover-row-model">
+                            <span class="popover-label">模型</span>
+                            <div class="popover-value-group">
+                              <span class="popover-value" id="popover-model-text">deepseek-v4-flash</span>
+                              <span class="popover-chevron">›</span>
+                            </div>
+                          </div>
+                          <div class="popover-submenu" id="popover-model-submenu" style="display: none;">
+                            <div class="submenu-item active" data-model="deepseek-v4-flash">deepseek-v4-flash</div>
+                            <div class="submenu-item" data-model="deepseek-v4-pro">deepseek-v4-pro</div>
+                          </div>
+
+                          <!-- 选项 2: 推理强度 -->
+                          <div class="popover-row" id="popover-row-effort">
+                            <span class="popover-label">推理强度</span>
+                            <div class="popover-value-group">
+                              <span class="popover-value" id="popover-effort-text">高</span>
+                              <span class="popover-chevron">›</span>
+                            </div>
+                          </div>
+                          <div class="popover-submenu" id="popover-effort-submenu" style="display: none;">
+                            <div class="submenu-item" data-effort="off">关闭</div>
+                            <div class="submenu-item" data-effort="low">低</div>
+                            <div class="submenu-item" data-effort="medium">中</div>
+                            <div class="submenu-item active" data-effort="high">高</div>
+                          </div>
+
+                          <div class="popover-divider"></div>
+
+                          <!-- 选项 3: 重置为默认设置 -->
+                          <div class="popover-row popover-reset-row" id="popover-btn-reset">
+                            <span class="popover-label-reset">重置为默认设置</span>
+                            <span class="popover-reset-icon">↻</span>
+                          </div>
+                        </div>
+
+                        <!-- 触发胶囊按钮 (参考截图底部) -->
+                        <button type="button" class="model-reasoning-pill-trigger" id="model-reasoning-pill-trigger" title="点击切换模型与推理强度">
+                          <span class="pill-model-name" id="pill-model-name">deepseek-v4-flash</span>
+                          <span class="pill-effort-name" id="pill-effort-name">高</span>
+                        </button>
+                      </div>
+
+                      <button id="btn-copilot-send" class="btn btn-primary btn-sm btn-copilot-action">
+                        <span>🚀 发送</span>
+                      </button>
+                      <button id="btn-copilot-stop" class="btn btn-secondary btn-sm btn-copilot-action" style="display: none;">
+                        <span>⏹ 停止</span>
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

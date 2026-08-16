@@ -7,3 +7,12 @@ release/
 *.log
 *.zip
 .DS_Store
+data/sessions.db
+data/sessions.db-wal
+data/sessions.db-shm
+
+# 随包 Linux Chrome (Chrome for Testing, 约 180MB, 用 scripts/setup-linux-chrome.sh 生成)
+bin/chrome-linux/
+
+# Chrome launcher 用户数据残留
+lighthouse.*/

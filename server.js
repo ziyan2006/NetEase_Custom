@@ -21,6 +21,7 @@ import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/tre
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
+import { SessionStore } from "./lib/session-store.js";
 
 const projectDirectory = fileURLToPath(new URL(".", import.meta.url));
 const publicDirectory = resolve(projectDirectory, "public");
@@ -190,6 +191,19 @@ import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse, sanitizePlayl
 
 function writeSseEvent(response, payload) {
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+/**
+ * 剥离卡片中的临时期效直链 (previewUrl),避免持久化过期 URL。
+ * 前端重放卡片时若 previewUrl 为空,会自动走 playTrack 重新拉取最新直链。
+ */
+function stripPreviewUrls(card) {
+  if (!card || typeof card !== "object") return card;
+  const clone = { ...card };
+  if (Array.isArray(clone.tracks)) {
+    clone.tracks = clone.tracks.map((t) => ({ ...t, previewUrl: "" }));
+  }
+  return clone;
 }
 
 // 总进度 = 直链获取阶段占 0-10%，逐曲下载阶段占 10-100%
@@ -487,9 +501,67 @@ async function runDiagnostic() {
 }
 
 export function createAppServer() {
+  const sessionStore = new SessionStore();
   setTimeout(runDiagnostic, 2000);
   return createHttpServer(async (request, response) => {
     const urlObj = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
+
+    // ===== 对话会话管理 API (SQLite 持久化) =====
+    const sessionMatch = /^\/api\/sessions(?:\/([^/]+))?$/.exec(urlObj.pathname);
+    if (sessionMatch) {
+      const sessionId = sessionMatch[1];
+
+      if (request.method === "GET" && !sessionId) {
+        sendJson(response, 200, { sessions: sessionStore.listSessions() });
+        return;
+      }
+
+      if (request.method === "POST" && !sessionId) {
+        try {
+          const bodyStr = await readJsonBody(request);
+          const params = JSON.parse(bodyStr || "{}");
+          const session = sessionStore.createSession(params.title || undefined);
+          sendJson(response, 200, { session });
+        } catch (err) {
+          sendJson(response, 500, { message: "创建会话失败: " + err.message });
+        }
+        return;
+      }
+
+      if (sessionId) {
+        if (request.method === "GET") {
+          const session = sessionStore.getSession(sessionId);
+          if (!session) {
+            sendJson(response, 404, { message: "会话不存在" });
+            return;
+          }
+          sendJson(response, 200, { session, messages: sessionStore.getMessages(sessionId) });
+          return;
+        }
+
+        if (request.method === "PATCH") {
+          try {
+            const bodyStr = await readJsonBody(request);
+            const params = JSON.parse(bodyStr || "{}");
+            const ok = sessionStore.renameSession(sessionId, params.title || "");
+            if (!ok) {
+              sendJson(response, 404, { message: "会话不存在或标题为空" });
+              return;
+            }
+            sendJson(response, 200, { session: sessionStore.getSession(sessionId) });
+          } catch (err) {
+            sendJson(response, 500, { message: "重命名会话失败: " + err.message });
+          }
+          return;
+        }
+
+        if (request.method === "DELETE") {
+          const ok = sessionStore.deleteSession(sessionId);
+          sendJson(response, ok ? 200 : 404, ok ? { ok: true } : { message: "会话不存在" });
+          return;
+        }
+      }
+    }
 
     if (request.method === "GET" && urlObj.pathname === "/api/login/qr/key") {
       let unikey = null;
@@ -769,7 +841,28 @@ export function createAppServer() {
       try {
         const bodyStr = await readJsonBody(request);
         const params = JSON.parse(bodyStr || "{}");
-        const { message, history = [], cookie = "", config = {} } = params;
+        const { message, history = [], cookie = "", config = {}, sessionId } = params;
+        const text = (message || "").trim();
+
+        // 会话模式: 服务端加载历史上下文,并持久化用户消息
+        let effectiveHistory = history;
+        let userMessageId = null;
+        if (sessionId) {
+          const session = sessionStore.getSession(sessionId);
+          if (!session) {
+            sendJson(response, 404, { message: "会话不存在" });
+            return;
+          }
+          const msgs = sessionStore.getMessages(sessionId);
+          effectiveHistory = msgs
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role, content: m.content }))
+            .filter((m) => m.content && m.content.trim())
+            .slice(-12); // 上下文窗口: 最近 12 条
+          if (text) {
+            userMessageId = sessionStore.appendMessage(sessionId, { role: "user", content: text }).id;
+          }
+        }
 
         response.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
@@ -779,18 +872,48 @@ export function createAppServer() {
         });
         response.write("retry: 1000\n\n");
 
+        // 流式事件累积 (用于持久化完整消息对象: 正文/思考链/卡片/工具过程)
+        const acc = { content: "", reasoning: "", card: null, toolEvents: [] };
+
         try {
           await dispatchAgentWorkflow({
             message,
-            history,
+            history: effectiveHistory,
             cookie,
             config,
-            onStream: (evt) => writeSseEvent(response, evt),
+            onStream: (evt) => {
+              writeSseEvent(response, evt);
+              if (evt.type === "text") acc.content += evt.data;
+              else if (evt.type === "reasoning") acc.reasoning += evt.data;
+              else if (evt.type === "card") acc.card = evt.data;
+              else if (evt.type === "tool_start" || evt.type === "tool_progress" || evt.type === "tool_result") {
+                acc.toolEvents.push(evt);
+              }
+            },
           });
         } catch (err) {
-          writeSseEvent(response, { type: "text", data: `\n\n⚠️ 处理请求失败: ${err.message}` });
+          const errText = `\n\n⚠️ 处理请求失败: ${err.message}`;
+          acc.content += errText; // 错误文本同样进入累积器,保证持久化完整
+          writeSseEvent(response, { type: "text", data: errText });
         } finally {
-          writeSseEvent(response, { type: "done", data: "stream_finished" });
+          // 会话模式: 持久化助手回复 (含思考链/卡片/工具过程)
+          let assistantMessageId = null;
+          if (sessionId && (acc.content || acc.reasoning || acc.card || acc.toolEvents.length > 0)) {
+            assistantMessageId = sessionStore.appendMessage(sessionId, {
+              role: "assistant",
+              content: acc.content,
+              reasoning: acc.reasoning,
+              cardData: acc.card ? stripPreviewUrls(acc.card) : null,
+              toolEvents: acc.toolEvents,
+            }).id;
+          }
+          writeSseEvent(response, {
+            type: "done",
+            data: "stream_finished",
+            sessionId,
+            userMessageId,
+            assistantMessageId,
+          });
           response.end();
         }
       } catch (err) {

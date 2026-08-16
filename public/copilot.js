@@ -4,7 +4,10 @@
  */
 
 const STORAGE_KEY_CONFIG = "yesmusic_copilot_config";
-const STORAGE_KEY_HISTORY = "yesmusic_copilot_history";
+const STORAGE_KEY_SESSION = "yesmusic_session_id";
+
+// 当前会话 (服务端 SQLite 持久化,仅存 id,消息全部由服务端管理)
+let currentSessionId = localStorage.getItem(STORAGE_KEY_SESSION) || null;
 
 const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com",
@@ -15,7 +18,6 @@ const DEFAULT_CONFIG = {
 };
 
 let currentAbortController = null;
-let chatHistory = [];
 
 export function getCopilotConfig() {
   try {
@@ -443,9 +445,9 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
   const container = document.getElementById("copilot-messages");
   if (!container) return null;
 
-  // 隐藏欢迎卡片
+  // 隐藏欢迎卡片 (存在任一消息气泡时)
   const welcomeCard = container.querySelector(".copilot-welcome-card");
-  if (welcomeCard && (role === "user" || chatHistory.length > 0)) {
+  if (welcomeCard && (role === "user" || container.querySelectorAll(".copilot-message-bubble").length > 0)) {
     welcomeCard.style.display = "none";
   }
 
@@ -692,12 +694,187 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
   };
 }
 
+// ===== 会话管理 (服务端 SQLite 持久化) =====
+
+async function fetchSessions() {
+  const res = await fetch("/api/sessions");
+  if (!res.ok) throw new Error(`获取会话列表失败 (HTTP ${res.status})`);
+  const data = await res.json();
+  return data.sessions || [];
+}
+
+async function createNewSession() {
+  const res = await fetch("/api/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`创建会话失败 (HTTP ${res.status})`);
+  const data = await res.json();
+  return data.session;
+}
+
+async function deleteSessionById(id) {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return res.ok;
+}
+
+async function renameSessionById(id, title) {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  return res.ok;
+}
+
+async function loadSessionMessages(id) {
+  const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return { session: data.session, messages: data.messages || [] };
+}
+
+/** 清空消息容器 (保留欢迎卡片) */
+function clearMessagesContainer() {
+  const container = document.getElementById("copilot-messages");
+  if (!container) return;
+  container.querySelectorAll(".copilot-message-bubble").forEach((el) => el.remove());
+  const welcomeCard = container.querySelector(".copilot-welcome-card");
+  if (welcomeCard) welcomeCard.style.display = "";
+}
+
+/** 相对时间格式化 (Codex 风格: 刚刚 / N 分钟前 / N 小时前 / N 天前 / 日期) */
+function formatRelativeTime(ts) {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  const min = 60 * 1000;
+  const hour = 60 * min;
+  const day = 24 * hour;
+  if (diff < min) return "刚刚";
+  if (diff < hour) return `${Math.floor(diff / min)} 分钟前`;
+  if (diff < day) return `${Math.floor(diff / hour)} 小时前`;
+  if (diff < 7 * day) return `${Math.floor(diff / day)} 天前`;
+  const d = new Date(ts);
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/** 渲染左侧会话列表 (Codex 风格侧栏) */
+function renderSessionList(sessions, activeId) {
+  const listEl = document.getElementById("session-list");
+  if (!listEl) return;
+
+  if (!sessions || sessions.length === 0) {
+    listEl.innerHTML = `<div class="session-list-empty">暂无会话<br/>点击上方「新建会话」开始</div>`;
+    return;
+  }
+
+  listEl.innerHTML = sessions
+    .map((s) => {
+      const isActive = s.id === activeId;
+      const title = escapeHtml(s.title || "新对话");
+      const meta = formatRelativeTime(s.updatedAt);
+      return `
+        <div class="session-item${isActive ? " active" : ""}" data-id="${escapeHtml(s.id)}">
+          <div class="session-item-main">
+            <div class="session-item-title" title="${title}">${title}</div>
+            <div class="session-item-meta">${meta}</div>
+          </div>
+          <div class="session-item-actions">
+            <button class="session-item-btn" data-act="rename" title="重命名">✏️</button>
+            <button class="session-item-btn" data-act="delete" title="删除">🗑</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+/** 仅更新会话列表的选中态 (切换会话时避免整表重渲染) */
+function updateSessionListActive(activeId) {
+  const listEl = document.getElementById("session-list");
+  if (!listEl) return;
+  listEl.querySelectorAll(".session-item").forEach((el) => {
+    el.classList.toggle("active", el.dataset.id === activeId);
+  });
+}
+
+/** 将持久化的消息序列重放到消息流 (复用流式 handle 的增量 API 作为回放通道) */
+function renderSessionMessages(messages) {
+  const container = document.getElementById("copilot-messages");
+  if (!container) return;
+  if (container.querySelectorAll(".copilot-message-bubble").length > 0) return;
+
+  for (const msg of messages) {
+    if (msg.role === "user") {
+      appendCopilotMessage({ role: "user", content: msg.content });
+    } else if (msg.role === "assistant") {
+      const handle = appendCopilotMessage({
+        role: "assistant",
+        content: msg.content,
+        reasoning: msg.reasoning,
+        cardData: msg.cardData,
+      });
+      if (handle && Array.isArray(msg.toolEvents)) {
+        for (const ev of msg.toolEvents) {
+          if (!ev || !ev.data) continue;
+          if (ev.type === "tool_start") handle.startTool(ev.data);
+          else if (ev.type === "tool_progress") handle.updateToolProgress(ev.data);
+          else if (ev.type === "tool_result") handle.finishTool(ev.data);
+        }
+      }
+    }
+  }
+  const welcomeCard = container.querySelector(".copilot-welcome-card");
+  if (welcomeCard && container.querySelectorAll(".copilot-message-bubble").length > 0) {
+    welcomeCard.style.display = "none";
+  }
+}
+
+/** 切换到指定会话 (加载消息 + 重放 + 更新下拉框) */
+async function switchSession(id) {
+  const data = await loadSessionMessages(id);
+  if (!data) return false;
+  currentSessionId = id;
+  localStorage.setItem(STORAGE_KEY_SESSION, id);
+  clearMessagesContainer();
+  renderSessionMessages(data.messages);
+  updateSessionListActive(id);
+  return true;
+}
+
+/** 应用启动时初始化会话: 优先恢复上次会话, 否则新建 */
+async function initCopilotSession() {
+  let sessions = [];
+  try {
+    sessions = await fetchSessions();
+  } catch {
+    sessions = [];
+  }
+  let target = sessions.find((s) => s.id === currentSessionId) || sessions[0] || null;
+  if (!target) {
+    target = await createNewSession();
+  }
+  await switchSession(target.id);
+  // 首次渲染左侧会话列表
+  try {
+    renderSessionList(await fetchSessions(), target.id);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * 发送用户消息并处理流式响应
  */
 export async function sendCopilotMessage(userText) {
   const text = (userText || "").trim();
   if (!text) return;
+
+  // 确保会话已就绪 (防止在会话初始化完成前发送)
+  if (!currentSessionId) {
+    await initCopilotSession();
+  }
 
   const inputEl = document.getElementById("copilot-input");
   const sendBtn = document.getElementById("btn-copilot-send");
@@ -709,7 +886,6 @@ export async function sendCopilotMessage(userText) {
 
   // 渲染用户输入气泡
   appendCopilotMessage({ role: "user", content: text });
-  chatHistory.push({ role: "user", content: text });
 
   // 切换 UI 状态为生成中
   if (sendBtn) sendBtn.style.display = "none";
@@ -733,7 +909,7 @@ export async function sendCopilotMessage(userText) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        history: chatHistory.slice(-8), // 携带最近对话
+        sessionId: currentSessionId, // 历史上下文由服务端从 SQLite 加载
         cookie,
         config,
       }),
@@ -792,8 +968,6 @@ export async function sendCopilotMessage(userText) {
         }
       }
     }
-
-    chatHistory.push({ role: "assistant", content: accumulatedContent });
   } catch (err) {
     if (err.name === "AbortError") {
       aiMsgHandle.updateContent(accumulatedContent + "\n\n*(已手动停止生成)*");
@@ -811,12 +985,26 @@ export async function sendCopilotMessage(userText) {
 /**
  * 初始化 Copilot 页面事件与设置绑定
  */
-export function initCopilot() {
+export async function initCopilot() {
+  // 防止 DOMContentLoaded 与直接调用双触发导致重复绑定
+  if (window.__copilotInitialized) return;
+  window.__copilotInitialized = true;
+
   const inputEl = document.getElementById("copilot-input");
   const sendBtn = document.getElementById("btn-copilot-send");
   const stopBtn = document.getElementById("btn-copilot-stop");
-  const clearBtn = document.getElementById("btn-copilot-clear");
   const settingsBtn = document.getElementById("btn-copilot-settings");
+  const newSessionBtn = document.getElementById("btn-new-session");
+  const toggleSidebarBtn = document.getElementById("btn-toggle-sidebar");
+  const sidebar = document.getElementById("session-sidebar");
+  const sessionListEl = document.getElementById("session-list");
+
+  // 会话初始化: 恢复上次会话或新建 (失败不阻塞聊天,发送时兜底再初始化)
+  try {
+    await initCopilotSession();
+  } catch (err) {
+    console.warn("[Copilot Session Init Warning]:", err.message);
+  }
 
   // 模型 & 推理强度 Popover 与胶囊 Trigger (参考图 UI)
   const pillTrigger = document.getElementById("model-reasoning-pill-trigger");
@@ -1118,45 +1306,74 @@ export function initCopilot() {
     });
   });
 
-  // 清空记录
-  clearBtn?.addEventListener("click", () => {
-    const container = document.getElementById("copilot-messages");
-    if (container) {
-      container.innerHTML = `
-        <div class="copilot-welcome-card">
-          <div class="welcome-badge">🎧 DJ 智能助手已就绪</div>
-          <h3 class="welcome-heading">有什么可以协助您的 DJ 工作流？</h3>
-          <p class="welcome-desc">
-            支持直接发送 1001Tracklists 现场链接自动逆向还原歌单、一键检索 Beatport 风格榜单、Camelot 调性和谐度过渡建议或自然语言选曲排歌。
-          </p>
-          <div class="copilot-quick-pills">
-            <button class="quick-pill-btn" data-prompt="https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage-tomorrowland-belgium-weekend-1-2023-07-22.html">
-              🎸 解析 1001TL 现场 Setlist
-            </button>
-            <button class="quick-pill-btn" data-prompt="帮我整理本周 Beatport 最热门的 Melodic Techno 单曲">
-              🌌 本周 Melodic Techno 热单
-            </button>
-            <button class="quick-pill-btn" data-prompt="帮我推荐本周 Tech House 风格的热门单曲">
-              ⚡ Tech House 趋势雷达
-            </button>
-            <button class="quick-pill-btn" data-prompt="推荐适合接在 126 BPM 8A 后的 Camelot 调性与混音方案">
-              🎛️ 8A 调性过渡建议
-            </button>
-            <button class="quick-pill-btn" data-prompt="做一张适合 128BPM 峰值时段 (Peak Time) 的高能量 Bass House 歌单">
-              🔊 128 BPM 场景排歌
-            </button>
-          </div>
-        </div>
-      `;
-      container.querySelectorAll(".quick-pill-btn").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const p = btn.getAttribute("data-prompt");
-          if (p) sendCopilotMessage(p);
-        });
-      });
+  // 新建会话 (侧栏顶部按钮)
+  newSessionBtn?.addEventListener("click", async () => {
+    try {
+      const session = await createNewSession();
+      await switchSession(session.id);
+      renderSessionList(await fetchSessions(), session.id);
+    } catch (err) {
+      console.warn("[Copilot New Session Warning]:", err.message);
     }
-    chatHistory = [];
   });
+
+  // 会话列表事件委托: 点击切换 / 悬停重命名与删除
+  sessionListEl?.addEventListener("click", async (evt) => {
+    const actBtn = evt.target.closest(".session-item-btn");
+    const item = evt.target.closest(".session-item");
+    if (!item || !item.dataset.id) return;
+
+    if (actBtn) {
+      const act = actBtn.dataset.act;
+      const sid = item.dataset.id;
+      if (act === "rename") {
+        const title = window.prompt("请输入新的会话标题:", "");
+        if (title && title.trim()) {
+          try {
+            await renameSessionById(sid, title.trim());
+            renderSessionList(await fetchSessions(), currentSessionId);
+          } catch (err) {
+            console.warn("[Copilot Rename Session Warning]:", err.message);
+          }
+        }
+      } else if (act === "delete") {
+        if (!window.confirm("确定删除该会话及其全部消息记录吗？")) return;
+        try {
+          await deleteSessionById(sid);
+          let sessions = await fetchSessions();
+          if (sid === currentSessionId) {
+            if (sessions.length > 0) {
+              await switchSession(sessions[0].id);
+            } else {
+              const session = await createNewSession();
+              await switchSession(session.id);
+            }
+            sessions = await fetchSessions();
+          }
+          renderSessionList(sessions, currentSessionId);
+        } catch (err) {
+          console.warn("[Copilot Delete Session Warning]:", err.message);
+        }
+      }
+      return;
+    }
+
+    // 切换会话
+    if (item.dataset.id !== currentSessionId) {
+      await switchSession(item.dataset.id);
+    }
+  });
+
+  // 展开/收起左侧会话栏 (Codex 风格)
+  toggleSidebarBtn?.addEventListener("click", () => {
+    sidebar?.classList.toggle("collapsed");
+    const collapsed = sidebar?.classList.contains("collapsed");
+    localStorage.setItem("yesmusic_sidebar_collapsed", collapsed ? "1" : "0");
+    if (toggleSidebarBtn) toggleSidebarBtn.textContent = collapsed ? "☰" : "☰";
+  });
+  if (sidebar && localStorage.getItem("yesmusic_sidebar_collapsed") === "1") {
+    sidebar.classList.add("collapsed");
+  }
 
   // 设置 Modal 打开与关闭
   const openModal = () => {
