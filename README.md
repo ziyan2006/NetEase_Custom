@@ -1,61 +1,95 @@
-# YesMusic DJ Helper · 网易云音乐助手与本地音频转换转码器
+# YesMusic DJ Helper
 
-专为 DJ 与音乐制作人打造的现代桌面级网易云音乐客户端与音频转换压制工具。基于 [YesPlayMusic](https://github.com/qier222/YesPlayMusic) 极简暗黑视觉流体设计，支持 **网易云官方 320k 极高音质歌单导出**、**在线曲库检索**、**全局浮动音乐播放器**、**云端歌单新建与单曲增删管理** 以及 **纯前端 NCM 解密/FFmpeg 本地音频格式压制**。
+面向 DJ 与音乐制作人的 Windows 桌面音乐工作台。应用将网易云音乐歌单管理、本地音频转换、现场 Setlist 解析、调性分析和 DJ Copilot 集成在一个 Electron 应用中。
 
----
+## 功能
 
-## ✨ 核心特性
+- 网易云音乐登录、歌单浏览、新建、删改和曲库搜索
+- 歌曲试听与歌单批量导出，导出过程通过 SSE 实时报告进度
+- 本地音频文件转换，支持 WAV、MP3、FLAC、M4A、AAC、OGG、OPUS、AIFF 和 WMA 等常用格式
+- Electron 原生目录选择与网易云官方登录窗口；登录成功后自动接收 `MUSIC_U` Cookie
+- DJ Copilot：流式对话、SQLite 会话历史、模型设置和工具执行记录
+- 1001Tracklists 现场曲目单解析、网易云曲目匹配和歌单创建
+- Camelot 调性轮盘与 BPM 过渡建议
+- 多源热单雷达：整合 Deezer、Spotify、Last.fm、Apple Music 与 Beatport，并支持缓存和降级
 
-- 🎨 **YesPlayMusic 极简流体美学**：采用深邃暗黑调 (`#121215`)、网易红霓虹高亮 (`#ea4453`)、高斯模糊毛玻璃遮罩 (`backdrop-filter: blur(25px)`) 与大封面立体卡片网格。
-- 🎵 **全局浮动音乐播放器**：支持在底部浮层中在线播放试听网易云 320k 音频流，提供播放/暂停、切歌、进度条控制与音量滑块。
-- ⚡ **100% 官方 320k 极高音质直连导出**：突破阿里 CDN `403 Forbidden` (`authSecret` 签名校验)，配合个人 VIP 账号全量一键导出为标准 `320kbps MP3` 文件，自动注入 ID3v2 标签（歌名、歌手名、唱片封面），完美兼容 Rekordbox & Serato DJ。
-- 🔍 **曲库在线检索与歌单编辑**：支持按关键字在线搜索网易云千万级曲库，支持在线试听、一键加歌到指定歌单、以及从歌单中移除单曲。
-- 🔒 **全屏阻断进高度锁定遮罩 (`z-index: 9999`)**：导出与转码过程中自动浮现全屏阻断进度条，防止二次点击导致的并发冲突与文件损坏。
-- 🔑 **网易云扫码授权与凭证自动捕获**：支持 Electron 原生拦截安全登录凭证，并提供浏览器 `MUSIC_U` 风控兜底导入。
+## 技术栈
 
----
+- 桌面端：Electron
+- 服务端：原生 Node.js HTTP 服务与 Server-Sent Events
+- 前端：原生 HTML、CSS、JavaScript
+- 本地数据：SQLite（`better-sqlite3`）
+- 音频处理：FFmpeg（`ffmpeg-static`）
+- 自动化抓取：Puppeteer 与 Chrome for Testing
 
-## 📚 详细技术与 API 文档
+## 开始使用
 
-我们整理并测试通过了全套网易云 Restful API 与 CDN 鉴权突破技术细节，请参阅：
-👉 **[网易云 API 接口与 CDN 鉴权突破技术文档](docs/API_DOCUMENTATION.md)**
+需要 Node.js 20 或更高版本。
 
----
-
-## 🚀 运行与开发
-
-### 1. 安装依赖
-```cmd
+```bash
 npm install
+npm start
 ```
 
-### 2. 启动本地服务或 Electron 桌面端
-```cmd
-# 启动本地 Node 服务
-npm start
+本地服务默认监听 `http://127.0.0.1:4178`；可通过 `PORT` 环境变量调整。
 
-# 启动 Electron 桌面应用
+启动桌面应用：
+
+```bash
 npm run electron
 ```
 
-### 3. 运行全量单元测试
-```cmd
+Electron 会启动本机服务。若默认端口已被占用，会自动选择可用端口。
+
+## DJ Copilot 配置
+
+Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设置中填写 API Base URL、API Key、模型名与思考强度；配置仅存储在本机浏览器本地存储中。
+
+支持 DeepSeek、OpenAI、通义千问和 Ollama 兼容端点。1001Tracklists 与 Beatport 等外部数据源可能受网络、登录状态和站点反爬策略影响；Beatport Cookie 可在 Copilot 设置中保存或清除。
+
+## 本地数据
+
+- Electron 会话数据库：系统应用数据目录下的 `sessions.db`
+- 非 Electron 运行时会话数据库：`data/sessions.db`
+- 热单雷达缓存：`data/charts_cache/`，默认有效期为 6 小时
+- 1001Tracklists 登录 Cookie 缓存：`data/1001tl_session_cookies.json`
+
+这些运行数据不应提交到版本控制。
+
+## 测试
+
+```bash
 npm test
 ```
 
----
+测试使用 Node.js 内置测试运行器。涉及 Agent 路由、模型服务或实时榜单抓取的测试需要有效网络和可用的模型配置；建议在 CI 中为这些依赖提供 mock 或单独标记为集成测试。
 
-## 📦 打包为独立 Windows 桌面程序 (.exe)
+## Windows 打包
 
-本项目配置了独立的桌面程序打包脚本，可一键在 `build/` 目录下生成绿色独立的桌面程序：
-
-```cmd
-npm run pack
+```bash
+npm run build:dir       # 解包目录构建
+npm run build:portable  # 便携版 exe
+npm run build:nsis      # NSIS 安装包
+npm run dist            # 目录版和便携版
 ```
 
-打包完成后，双击 `build\YesMusicDJHelper-win32-x64\YesMusicDJHelper.exe` 即可直接在任何 Windows 电脑上运行使用，无需额外安装 Node 环境。
+构建输出位于 `dist_app/`。
 
----
+## 项目结构
 
-## 📄 License
-MIT License.
+```text
+main.js                 Electron 主进程
+preload.cjs             受限的桌面端 IPC 接口
+server.js               本地 HTTP 服务与业务 API
+public/                 页面、播放器、歌单和 Copilot 前端
+lib/                    音频、网易云、会话与 DJ Agent 逻辑
+lib/dj-agent/           Skill 路由、Setlist、调性、雷达和模型客户端
+test/                   Node.js 测试
+docs/                   API 和设计文档
+```
+
+详细的网易云接口说明见 [API 文档](docs/API_DOCUMENTATION.md)。
+
+## 许可证
+
+MIT
