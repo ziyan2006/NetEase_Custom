@@ -318,6 +318,8 @@ export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, c
     const initialUrl = songUrlsMap.get(track.id);
     const artist = track.ar?.map(a => a.name).join(", ") || track.artists?.map(a => a.name).join(", ") || "Unknown Artist";
     const title = track.name;
+    const album = track.al?.name || track.album?.name || "";
+    const coverUrl = track.al?.picUrl || track.album?.picUrl || track.picUrl || "";
 
     activeWorkers.set(track.id, {
       speedBytesPerSec: 0,
@@ -366,6 +368,8 @@ export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, c
             playlistName: name,
             artist,
             title,
+            album,
+            coverUrl,
             downloadUrl: initialUrl,
             cookie,
             onProgress,
@@ -398,6 +402,8 @@ export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, c
         playlistName: name,
         artist,
         title,
+        album,
+        coverUrl,
         downloadUrl: outerUrl,
         cookie,
         onProgress,
