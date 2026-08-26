@@ -413,6 +413,339 @@ export function createArtistSetsCardElement(cardData) {
   return card;
 }
 
+/**
+ * 渲染「DJ Crate Digger 专属排 Set 富卡片」组件
+ */
+export function createCrateDiggerCardElement(cardData) {
+  const card = document.createElement("div");
+  card.className = "copilot-crate-digger-card";
+
+  const rawTitle = cardData.title || "DJ Crate Digger 智能排 Set";
+  const scenario = cardData.scenario || "现场演出";
+  const genre = cardData.genre || "Electronic";
+  const bpmRange = cardData.bpmRange || "126-130";
+  let tracks = [...(cardData.tracks || [])];
+  let doubleDropPairs = [...(cardData.doubleDropPairs || [])];
+
+  function renderCardContent() {
+    let lastStage = null;
+    let trackRowsHtml = "";
+
+    tracks.forEach((t, idx) => {
+      const stage = t.stage || "groove";
+      if (stage !== lastStage) {
+        lastStage = stage;
+        let stageName = "⚡ Groove (律动铺垫)";
+        let stageClass = "stage-groove";
+        if (stage === "warm_up") { stageName = "🔥 Warm Up (热身准备)"; stageClass = "stage-warm-up"; }
+        else if (stage === "peak") { stageName = "🚀 Peak (高潮爆发)"; stageClass = "stage-peak"; }
+        else if (stage === "closing") { stageName = "🌙 Closing (余韵收尾)"; stageClass = "stage-closing"; }
+
+        trackRowsHtml += `
+          <div class="digger-stage-divider ${stageClass}">
+            <span>${stageName}</span>
+          </div>
+        `;
+      }
+
+      const songName = t?.name || t?.title || "未知曲目";
+      const songArtist = t?.artist || "未知艺人";
+      const songAlbum = t?.album || "Single";
+      const songCover = t?.coverUrl || "https://p2.music.126.net/VnIcST_OiUzDuyBzTXBwA==/109951163965582984.jpg";
+      const songId = t?.id || "";
+      const songDuration = formatDuration(t?.durationMs || t?.duration);
+      const songPreview = t?.previewUrl || "";
+      const is320k = Boolean(t?.playable320k !== false);
+      const keyStr = t?.musical_key ? `${t.musical_key}${t.standardKey ? ` / ${t.standardKey}` : ''}` : '';
+      const bpmStr = t?.bpm ? `${t.bpm} BPM` : '';
+      const reasonStr = t?.reason || '';
+
+      const safeName = escapeHtml(songName);
+      const safeArtist = escapeHtml(songArtist);
+      const safeCover = escapeHtml(songCover);
+      const safePreview = escapeHtml(songPreview);
+
+      trackRowsHtml += `
+        <div class="preview-track-row" data-song-id="${songId}">
+          <div class="track-num">${String(idx + 1).padStart(2, "0")}</div>
+          <div class="track-cover-thumb">
+            <img src="${safeCover}" alt="Cover" />
+          </div>
+          <div class="track-meta">
+            <div class="track-name-line">
+              <span class="track-name">${safeName}</span>
+              ${is320k ? '<span class="pill-320k">320K</span>' : ''}
+              ${keyStr ? `<span class="pill-key">${keyStr}</span>` : ''}
+              ${bpmStr ? `<span class="pill-bpm">${bpmStr}</span>` : ''}
+            </div>
+            <div class="track-artist-line">${safeArtist} · <span class="track-album">${escapeHtml(songAlbum)}</span></div>
+            ${reasonStr ? `<div class="track-reason-line">💡 ${escapeHtml(reasonStr)}</div>` : ''}
+          </div>
+          <div class="track-duration">${songDuration}</div>
+          <div class="track-actions">
+            <button class="btn-card-play-track" data-id="${songId}" data-name="${safeName}" data-artist="${safeArtist}" data-cover="${safeCover}" data-url="${safePreview}" title="试听">
+              ▶️
+            </button>
+          </div>
+        </div>
+      `;
+    });
+
+    let doubleDropHtml = "";
+    if (doubleDropPairs.length > 0) {
+      doubleDropHtml = `
+        <div class="double-drop-banner">
+          <div class="double-drop-header">
+            <span class="double-drop-title">🔥 发现 ${doubleDropPairs.length} 组 Double Drop 双押炸场组合</span>
+          </div>
+          <div class="double-drop-list">
+            ${doubleDropPairs.map((p) => `
+              <div class="double-drop-item">
+                <strong>0${p.trackIndexA}. ${escapeHtml(p.trackA.artist)} - ${escapeHtml(p.trackA.name || p.trackA.title)}</strong> 与 
+                <strong>0${p.trackIndexB}. ${escapeHtml(p.trackB.artist)} - ${escapeHtml(p.trackB.name || p.trackB.title)}</strong>
+                <div>${p.keyMatch} · ${p.bpmMatch}</div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    card.innerHTML = `
+      <div class="digger-header">
+        <div class="digger-title-line">
+          <span class="digger-badge">Crate Digger Set</span>
+          <span class="digger-title">${escapeHtml(rawTitle)}</span>
+        </div>
+        <div class="digger-meta-tags">
+          <span class="digger-tag">🎪 ${escapeHtml(scenario)}</span>
+          <span class="digger-tag">🎵 ${escapeHtml(genre)}</span>
+          <span class="digger-tag">⚡ ${escapeHtml(bpmRange)} BPM</span>
+          <span class="digger-tag">📦 共 ${tracks.length} 首 320K 官方音轨</span>
+        </div>
+      </div>
+
+      ${doubleDropHtml}
+
+      <div class="preview-track-list">
+        ${trackRowsHtml}
+      </div>
+
+      <div class="digger-footer-grid">
+        <button class="btn btn-primary btn-sm btn-confirm-create-playlist">
+          <span>🚀 一键导入到我的网易云歌单</span>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-reorder-camelot">
+          <span>🔄 按五度圈谐波重排</span>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-export-w4dj">
+          <span>💾 导出 .w4dj 工程</span>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-copy-plaintext">
+          <span>📋 复制歌单文本</span>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-play-all-preview">
+          <span>▶️ 全部试听</span>
+        </button>
+      </div>
+      <div class="card-status-msg" style="display: none; margin-top: 10px; font-size: 12px;"></div>
+    `;
+
+    bindCardEvents();
+  }
+
+  function bindCardEvents() {
+    // 1. 单曲试听
+    card.querySelectorAll(".btn-card-play-track").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const songId = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name");
+        const artist = btn.getAttribute("data-artist");
+        const cover = btn.getAttribute("data-cover");
+        const previewUrl = btn.getAttribute("data-url");
+
+        if (window.playTrackDirectly) {
+          window.playTrackDirectly({ id: songId, name, artist, cover, previewUrl });
+        }
+      });
+    });
+
+    // 2. 全部试听
+    card.querySelector(".btn-play-all-preview")?.addEventListener("click", () => {
+      if (window.playTrackDirectly && tracks[0]) {
+        const first = tracks[0];
+        window.playTrackDirectly({
+          id: first.id,
+          name: first.name,
+          artist: first.artist,
+          cover: first.coverUrl,
+          previewUrl: first.previewUrl,
+        });
+      }
+    });
+
+    // 3. 一键导入网易云歌单
+    const btnCreate = card.querySelector(".btn-confirm-create-playlist");
+    const statusMsg = card.querySelector(".card-status-msg");
+
+    btnCreate?.addEventListener("click", async () => {
+      const cookie = window.getNeteaseCookie ? window.getNeteaseCookie() : (localStorage.getItem("netease_cookie") || "");
+      const songIds = tracks.map((t) => t.id).filter(Boolean);
+
+      if (!cookie) {
+        statusMsg.style.display = "block";
+        statusMsg.style.color = "#ef4444";
+        statusMsg.innerHTML = `
+          <div style="padding: 10px 14px; background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; margin-top: 6px;">
+            <div style="font-weight: 600; color: #f87171; margin-bottom: 4px;">🔑 尚未登录网易云账号</div>
+            <div style="color: var(--text-muted); font-size: 12px; margin-bottom: 8px;">在网易云云端建歌单需要您的账号授权。您可以立即扫码登录，或先保存至本地：</div>
+            <button class="btn btn-primary btn-sm btn-action-login-qr" style="padding: 4px 10px; font-size: 11px;">📱 立即扫码登录</button>
+          </div>
+        `;
+        statusMsg.querySelector(".btn-action-login-qr")?.addEventListener("click", () => {
+          document.querySelector("#btn-netease-login")?.click();
+        });
+        return;
+      }
+
+      btnCreate.disabled = true;
+      btnCreate.innerHTML = "<span>⏳ 正在云端创建歌单并批量添加曲目...</span>";
+      statusMsg.style.display = "none";
+
+      try {
+        const res = await fetch("/api/agent/create-playlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: rawTitle,
+            songIds,
+            privacy: "0",
+            cookie,
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.playlistId) {
+          btnCreate.innerHTML = "<span>✅ 已成功导入网易云歌单！</span>";
+          btnCreate.classList.replace("btn-primary", "btn-secondary");
+          statusMsg.style.display = "block";
+          statusMsg.style.color = "#4ade80";
+          statusMsg.innerHTML = `🎉 恭喜！已在您的网易云云端创建歌单 <strong>${escapeHtml(data.name)}</strong> (包含 ${data.addedCount || songIds.length} 首 320k 曲目)！<a href="https://music.163.com/#/playlist?id=${data.playlistId}" target="_blank" class="btn btn-primary btn-sm" style="margin-left: 10px; padding: 2px 8px; font-size: 11px; text-decoration: none;">🎧 网页打开</a>`;
+          
+          if (window.fetchUserPlaylists) {
+            window.fetchUserPlaylists();
+          }
+        } else {
+          throw new Error(data.message || "创建歌单失败");
+        }
+      } catch (err) {
+        btnCreate.disabled = false;
+        btnCreate.innerHTML = "<span>🚀 重试导入网易云</span>";
+        statusMsg.style.display = "block";
+        statusMsg.style.color = "#ef4444";
+        statusMsg.textContent = `❌ 同步失败: ${err.message}`;
+      }
+    });
+
+    // 4. 按五度圈谐波重排
+    const btnReorder = card.querySelector(".btn-reorder-camelot");
+    btnReorder?.addEventListener("click", async () => {
+      btnReorder.disabled = true;
+      btnReorder.innerHTML = "<span>⏳ 正在计算五度圈最短路径...</span>";
+
+      try {
+        const res = await fetch("/api/agent/reorder-camelot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracks }),
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.tracks)) {
+            tracks = data.tracks;
+            doubleDropPairs = data.doubleDropPairs || [];
+            renderCardContent();
+            return;
+          }
+        }
+        throw new Error("重排接口未返回有效曲目");
+      } catch (err) {
+        btnReorder.disabled = false;
+        btnReorder.innerHTML = "<span>🔄 按五度圈谐波重排</span>";
+        statusMsg.style.display = "block";
+        statusMsg.style.color = "#ef4444";
+        statusMsg.textContent = `五度圈重排失败: ${err.message}`;
+      }
+    });
+
+    // 5. 导出 .w4dj 工程
+    const btnExportW4dj = card.querySelector(".btn-export-w4dj");
+    btnExportW4dj?.addEventListener("click", async () => {
+      btnExportW4dj.disabled = true;
+      btnExportW4dj.innerHTML = "<span>⏳ 正在导出 .w4dj...</span>";
+
+      try {
+        const res = await fetch("/api/agent/export-w4dj", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playlist: {
+              name: rawTitle,
+              scenario,
+              output_mode: cardData.outputMode || "composite",
+            },
+            tracks,
+          }),
+        });
+
+        if (res.ok) {
+          const blob = await res.blob();
+          const downloadUrl = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = downloadUrl;
+          a.download = `${rawTitle.replace(/[^a-z0-9_\u4e00-\u9fa5]+/gi, "_")}.w4dj`;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(downloadUrl);
+
+          btnExportW4dj.innerHTML = "<span>✅ .w4dj 已导出！</span>";
+          setTimeout(() => {
+            btnExportW4dj.disabled = false;
+            btnExportW4dj.innerHTML = "<span>💾 导出 .w4dj 工程</span>";
+          }, 3000);
+        } else {
+          throw new Error("导出失败");
+        }
+      } catch (err) {
+        btnExportW4dj.disabled = false;
+        btnExportW4dj.innerHTML = "<span>💾 导出 .w4dj 工程</span>";
+        statusMsg.style.display = "block";
+        statusMsg.style.color = "#ef4444";
+        statusMsg.textContent = `导出 W4DJ 失败: ${err.message}`;
+      }
+    });
+
+    // 6. 复制纯文本歌单
+    const btnCopyText = card.querySelector(".btn-copy-plaintext");
+    btnCopyText?.addEventListener("click", () => {
+      const textLines = tracks.map((t, i) => `${String(i + 1).padStart(2, "0")}. ${t.artist} - ${t.name || t.title}`).join("\n");
+      navigator.clipboard.writeText(textLines).then(() => {
+        btnCopyText.innerHTML = "<span>✅ 歌单已复制到剪贴板！</span>";
+        setTimeout(() => {
+          btnCopyText.innerHTML = "<span>📋 复制歌单文本</span>";
+        }, 2500);
+      }).catch(() => {
+        btnCopyText.innerHTML = "<span>❌ 复制失败</span>";
+      });
+    });
+  }
+
+  renderCardContent();
+  return card;
+}
+
 function escapeHtml(str) {
   if (!str) return "";
   return String(str)
@@ -425,6 +758,7 @@ function escapeHtml(str) {
 
 function getToolIcon(tool) {
   switch (tool) {
+    case "dj_crate_digger": return "🎧";
     case "1001tl_setlist_scraper": return "🌐";
     case "genre_trend_radar": return "🔥";
     case "camelot_harmonic_mixing": return "🎛️";
@@ -675,12 +1009,17 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
     },
     appendCard: (card) => {
       if (!card) return;
-      const existing = contentArea.querySelector(".copilot-preview-card, .copilot-artist-sets-card");
+      const existing = contentArea.querySelector(".copilot-preview-card, .copilot-artist-sets-card, .copilot-crate-digger-card");
       if (existing) existing.remove();
 
-      const cardEl = (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector")
-        ? createArtistSetsCardElement(card)
-        : createPlaylistPreviewCardElement(card);
+      let cardEl = null;
+      if (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector") {
+        cardEl = createArtistSetsCardElement(card);
+      } else if (card.sourceType === "crate_digger_result" || card.type === "crate_digger_set") {
+        cardEl = createCrateDiggerCardElement(card);
+      } else {
+        cardEl = createPlaylistPreviewCardElement(card);
+      }
 
       if (cardEl) {
         contentArea.appendChild(cardEl);

@@ -4,11 +4,12 @@ import { dispatchAgentWorkflow } from "../lib/dj-agent/agent-dispatcher.js";
 import { defaultSkillRegistry } from "../lib/dj-agent/skills/index.js";
 
 describe("纯 LLM Skill 注册中心与渐进式调度测试", () => {
-  it("SkillRegistry 应包含全部 5 个基础技能定义", () => {
+  it("SkillRegistry 应包含全部 6 个标准技能定义", () => {
     const skills = defaultSkillRegistry.getAll();
-    assert.strictEqual(skills.length, 5);
+    assert.strictEqual(skills.length, 6);
 
     const names = skills.map((s) => s.name);
+    assert.ok(names.includes("dj_crate_digger"));
     assert.ok(names.includes("1001tl_setlist_scraper"));
     assert.ok(names.includes("live_set_search"));
     assert.ok(names.includes("camelot_harmonic_mixing"));

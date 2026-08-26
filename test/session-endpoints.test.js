@@ -20,7 +20,9 @@ test("Server: Session API 全链路", async (t) => {
   t.after(() => {
     server.close();
     delete process.env.SESSION_DB_PATH;
-    fs.rmSync(dir, { recursive: true, force: true });
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    } catch {}
   });
 
   // 1. 空列表

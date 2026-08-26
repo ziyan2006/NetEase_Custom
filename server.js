@@ -18,7 +18,7 @@ import { downloadAndExportTrack } from "./lib/audio-exporter.js";
 import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
 import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
 import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
-import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
+import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey, reorderSetByCamelot, findDoubleDropPairs } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
 import { SessionStore } from "./lib/session-store.js";
@@ -1099,6 +1099,80 @@ export function createAppServer() {
         });
       } catch (err) {
         sendJson(response, 500, { message: "创建歌单与添加曲目失败: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/reorder-camelot") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { tracks = [] } = params;
+
+        const reordered = reorderSetByCamelot(tracks);
+        const doubleDropPairs = findDoubleDropPairs(reordered);
+
+        sendJson(response, 200, {
+          code: 200,
+          tracks: reordered,
+          doubleDropPairs,
+        });
+      } catch (err) {
+        sendJson(response, 500, { message: "五度圈重排失败: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/export-w4dj") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { playlist = {}, tracks = [] } = params;
+
+        const playlistName = sanitizePlaylistName(playlist.name || "DJ_Set");
+        const exportId = `w4dj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const createdAt = new Date().toISOString();
+
+        const w4djPayload = {
+          format: "w4dj",
+          format_version: 1,
+          export_id: exportId,
+          created_at: createdAt,
+          playlist: {
+            name: playlistName,
+            output_mode: playlist.output_mode || "composite",
+            scenario: playlist.scenario || null,
+            target_region: playlist.target_region || "中国大陆",
+            platform_priority: playlist.platform_priority || ["netease_cloud_music"],
+          },
+          tracks: tracks.map((t, idx) => ({
+            position: idx + 1,
+            record_id: `rec_${t.id || idx + 1}`,
+            title: t.name || t.title || "Unknown Title",
+            artist_display: t.artist || "Unknown Artist",
+            artists: [t.artist || "Unknown Artist"],
+            album_or_ep: t.album || null,
+            duration: t.durationMs ? Number((t.durationMs / 1000).toFixed(1)) : null,
+            bpm: Number(t.bpm) || null,
+            musical_key: t.musical_key || null,
+            platform_refs: {
+              netease_cloud_music: t.id ? `https://music.163.com/#/song?id=${t.id}` : null,
+            },
+            dedupe_key: `${(t.artist || "").toLowerCase()}_${(t.name || t.title || "").toLowerCase()}`.replace(/[^a-z0-9]/g, "_"),
+            expected_filename_hint: `${t.artist || "Artist"} - ${t.name || t.title || "Title"}.mp3`,
+          })),
+        };
+
+        const jsonStr = JSON.stringify(w4djPayload, null, 2);
+        const filename = `${playlistName.toLowerCase().replace(/[^a-z0-9_\u4e00-\u9fa5]+/gi, "_")}.w4dj`;
+
+        response.writeHead(200, {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${encodeURIComponent(filename)}"`,
+        });
+        response.end(jsonStr);
+      } catch (err) {
+        sendJson(response, 500, { message: "导出 W4DJ 协议失败: " + err.message });
       }
       return;
     }

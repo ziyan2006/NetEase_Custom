@@ -2273,6 +2273,192 @@ select.input-box option {
   font-weight: 700;
 }
 
+/* ==========================================================================
+   DJ Crate Digger 专业排 Set 卡片与调性/双押样式
+   ========================================================================== */
+
+.copilot-crate-digger-card {
+  background: linear-gradient(145deg, rgba(22, 22, 34, 0.95), rgba(16, 16, 24, 0.98));
+  border: 1px solid rgba(234, 68, 83, 0.35);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), 0 0 20px rgba(234, 68, 83, 0.15);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-top: 12px;
+  margin-bottom: 16px;
+  transition: var(--transition-normal);
+}
+
+.digger-header {
+  margin-bottom: 12px;
+}
+
+.digger-title-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.digger-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  background: linear-gradient(135deg, #ea4453, #f43f5e);
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.digger-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+}
+
+.digger-meta-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.digger-tag {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+/* Double Drop 双押炸场提示横幅 */
+.double-drop-banner {
+  background: linear-gradient(135deg, rgba(234, 68, 83, 0.12), rgba(245, 158, 11, 0.12));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.double-drop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.double-drop-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.double-drop-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.double-drop-item {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.25);
+  padding: 6px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #f59e0b;
+  line-height: 1.4;
+}
+
+.double-drop-item strong {
+  color: #fef08a;
+}
+
+/* 能量流阶段分隔条 (Warm Up / Groove / Peak / Closing) */
+.digger-stage-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin: 12px 0 6px 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.stage-warm-up {
+  background: rgba(59, 130, 246, 0.12);
+  border-left: 3px solid #3b82f6;
+  color: #60a5fa;
+}
+
+.stage-groove {
+  background: rgba(16, 185, 129, 0.12);
+  border-left: 3px solid #10b981;
+  color: #34d399;
+}
+
+.stage-peak {
+  background: rgba(234, 68, 83, 0.15);
+  border-left: 3px solid #ea4453;
+  color: #f87171;
+}
+
+.stage-closing {
+  background: rgba(168, 85, 247, 0.12);
+  border-left: 3px solid #a855f7;
+  color: #c084fc;
+}
+
+/* 调性与 BPM 标签徽章 */
+.pill-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+}
+
+.pill-bpm {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.track-reason-line {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.digger-footer-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+
 
 
 

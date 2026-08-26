@@ -15,7 +15,7 @@ test("Agent Dispatcher: Multi-line text setlist extraction & card output", async
     onStream: (ev) => streamEvents.push(ev),
   });
 
-  assert.equal(result.type, "text_setlist");
+  assert.equal(result.type, "tracklist_result");
   assert.ok(result.card);
   assert.equal(result.card.sourceType, "custom_setlist");
   assert.ok(result.card.tracks.length > 0);
@@ -29,7 +29,7 @@ test("Agent Dispatcher: Camelot Harmonic Transition detection", async () => {
     onStream: (ev) => streamEvents.push(ev),
   });
 
-  assert.equal(result.type, "camelot");
+  assert.equal(result.type, "camelot_analysis");
   assert.equal(result.baseKey, "8A");
   assert.equal(result.compatible.length, 6);
   assert.ok(streamEvents.some((e) => e.type === "text" && e.data.includes("Camelot 调性轮盘过渡指南")));
@@ -42,7 +42,7 @@ test("Agent Dispatcher: Genre Radar intent detection", async () => {
     onStream: (ev) => streamEvents.push(ev),
   });
 
-  assert.equal(result.type, "trend_radar");
+  assert.equal(result.type, "genre_radar");
   assert.ok(result.card);
   assert.ok(result.card.tracks.length > 0);
   assert.ok(streamEvents.some((e) => e.type === "card"));
