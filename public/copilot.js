@@ -11,7 +11,7 @@ let currentSessionId = localStorage.getItem(STORAGE_KEY_SESSION) || null;
 
 const DEFAULT_CONFIG = {
   baseUrl: "https://api.deepseek.com",
-  apiKey: "sk-14d4fe9c926f48bda06a6ec402ff5072",
+  apiKey: "",
   model: "deepseek-v4-flash",
   thinkingEffort: "high",
   temperature: 0.7,

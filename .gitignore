@@ -17,6 +17,7 @@ data/*_cookies.json
 data/charts_cache/
 data/chrome-profile/
 scripts/*_cookies.json
+scripts/*.html
 
 # 随包 Linux Chrome (Chrome for Testing, 约 180MB, 用 scripts/setup-linux-chrome.sh 生成)
 bin/chrome-linux/
