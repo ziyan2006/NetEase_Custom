@@ -11,7 +11,7 @@
 - DJ Copilot：流式对话、SQLite 会话历史、模型设置和工具执行记录
 - 1001Tracklists 现场曲目单解析、网易云曲目匹配和歌单创建
 - Camelot 调性轮盘与 BPM 过渡建议
-- 热单雷达：基于内置流派档案和 DJ Copilot 的模型策展，生成可匹配网易云的选曲建议
+- DeepSeek Harness SDK runtime：通过受限本机工具支持自然语言排 Set
 
 ## 技术栈
 
@@ -47,6 +47,16 @@ Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设�
 
 支持 DeepSeek、OpenAI、通义千问和 Ollama 兼容端点。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
 
+## DeepSeek Harness 排 Set
+
+自然语言排 Set 请求会进入 `harness/` 下的 DeepSeek Harness SDK runtime。runtime 只加载受限的曲库检索和 Camelot 过渡工具；1001Tracklists 解析、网易云登录 Cookie 和导出能力仍由本机服务处理。Harness 需要 Node.js 22.19 或更高版本。
+
+```bash
+npm install
+```
+
+配置 `DEEPSEEK_API_KEY` 后启动主服务即可。Harness runtime 按需启动，不需要单独启动 Web sidecar；若 Harness 不可用，请求会回退到原有本地 DJ 编排链路。`npm --prefix harness install` 只用于可选的独立 Web 调试界面。
+
 ## 本地数据
 
 - Electron 会话数据库：系统应用数据目录下的 `sessions.db`
@@ -61,7 +71,7 @@ Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设�
 npm test
 ```
 
-测试使用 Node.js 内置测试运行器。涉及 Agent 路由、模型服务或外部曲目单抓取的测试需要有效网络和可用的模型配置；建议在 CI 中为这些依赖提供 mock 或单独标记为集成测试。
+测试套件使用 Node.js 内置测试运行器 (`node --test test/*.test.js`)，已全面解耦外部网络和付费 LLM API，支持在无网络、无 `DEEPSEEK_API_KEY` 环境下全量离线运行。
 
 ## Windows 打包
 
@@ -82,7 +92,7 @@ preload.cjs             受限的桌面端 IPC 接口
 server.js               本地 HTTP 服务与业务 API
 public/                 页面、播放器、歌单和 Copilot 前端
 lib/                    音频、网易云、会话与 DJ Agent 逻辑
-lib/dj-agent/           Skill 路由、Setlist、调性、雷达和模型客户端
+lib/dj-agent/           Skill 路由、Setlist、调性和模型客户端
 test/                   Node.js 测试
 docs/                   API 和设计文档
 ```

@@ -12,14 +12,7 @@ test("Server: Agent Endpoints", async (t) => {
     server.close();
   });
 
-  // 1. GET /api/agent/trend-genres
-  const genresRes = await fetch(`${baseUrl}/api/agent/trend-genres`);
-  assert.equal(genresRes.status, 200);
-  const genresData = await genresRes.json();
-  assert.ok(Array.isArray(genresData.genres));
-  assert.ok(genresData.genres.length >= 5);
-
-  // 2. POST /api/agent/camelot
+  // 1. POST /api/agent/camelot
   const camelotRes = await fetch(`${baseUrl}/api/agent/camelot`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -30,7 +23,7 @@ test("Server: Agent Endpoints", async (t) => {
   assert.equal(camelotData.key, "8A");
   assert.equal(camelotData.compatible.length, 6);
 
-  // 3. POST /api/agent/camelot (Transition analysis)
+  // 2. POST /api/agent/camelot (Transition analysis)
   const transRes = await fetch(`${baseUrl}/api/agent/camelot`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

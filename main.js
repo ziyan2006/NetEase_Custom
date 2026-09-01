@@ -134,8 +134,11 @@ ipcMain.on("netease:open-login", () => {
 });
 
 app.whenReady().then(() => {
-  // 会话数据库写入 userData 目录 (打包后安装目录为只读, 不能使用 cwd)
-  process.env.SESSION_DB_PATH = path.join(app.getPath("userData"), "sessions.db");
+  // 会话数据库与 Harness 运行时可写数据写入 userData 目录 (打包后安装目录为只读, 不能使用 cwd 或 app.asar)
+  const userDataDir = app.getPath("userData");
+  process.env.SESSION_DB_PATH = process.env.SESSION_DB_PATH || path.join(userDataDir, "sessions.db");
+  process.env.DSH_HOME = process.env.DSH_HOME || path.join(userDataDir, "dsh-home");
+  process.env.YESMUSIC_HARNESS_RUNTIME_DIR = process.env.YESMUSIC_HARNESS_RUNTIME_DIR || path.join(userDataDir, "harness-runtime");
   const basePort = Number(process.env.PORT ?? 4178);
   server = createAppServer();
   
@@ -144,6 +147,7 @@ app.whenReady().then(() => {
       console.log(`[Electron Main] 端口 ${basePort} 已被占用，自动分配备用端口启动...`);
       server.listen(0, "127.0.0.1", () => {
         const actualPort = server.address().port;
+        process.env.YESMUSIC_AGENT_BRIDGE_URL = `http://127.0.0.1:${actualPort}`;
         console.log(`[Electron Main] 本地服务在 http://127.0.0.1:${actualPort} 启动`);
         createWindow(actualPort);
       });
@@ -153,6 +157,7 @@ app.whenReady().then(() => {
   });
 
   server.listen(basePort, "127.0.0.1", () => {
+    process.env.YESMUSIC_AGENT_BRIDGE_URL = `http://127.0.0.1:${basePort}`;
     console.log(`[Electron Main] 本地服务在 http://127.0.0.1:${basePort} 启动`);
     createWindow(basePort);
   });

@@ -70,8 +70,8 @@ test("SessionStore: 消息追加/读取 + 首条消息自动标题", () => {
       reasoning: "深度思考...",
       cardData: card,
       toolEvents: [
-        { type: "tool_start", data: { id: "c1", tool: "genre_trend_radar", name: "热单雷达" } },
-        { type: "tool_result", data: { id: "c1", tool: "genre_trend_radar", status: "success" } },
+        { type: "tool_start", data: { id: "c1", tool: "yesmusic-dj-crate-tools", name: "DJ Crate 工具" } },
+        { type: "tool_result", data: { id: "c1", tool: "yesmusic-dj-crate-tools", status: "success" } },
       ],
     });
     assert.ok(asstMsg.id);

@@ -1,3 +1,4 @@
+process.env.YESMUSIC_SKIP_REAL_SCRAPER = "1";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { searchArtistRecentSets } from "../lib/dj-agent/tracklist-parser.js";
@@ -23,21 +24,37 @@ test("Artist Sets Search: General query generates valid candidate sets", async (
 });
 
 test("Agent Dispatcher: Intent recognition for '帮我看看culture shock最近的演出'", async () => {
-  const events = [];
-  const res = await dispatchAgentWorkflow({
-    message: "帮我看看culture shock最近的演出",
-    onStream: (evt) => events.push(evt),
-  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options = {}) => {
+    const urlStr = String(url);
+    if (!urlStr.includes("api.deepseek.com") && !urlStr.includes("/chat/completions")) {
+      return originalFetch(url, options);
+    }
+    const decision = { skill: "live_set_search", parameters: { artist: "Culture Shock" }, thought: "检索现场" };
+    return new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: JSON.stringify(decision) } }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
 
-  assert.equal(res?.type, "artist_sets");
-  assert.ok(res?.card);
-  assert.equal(res.card.sourceType, "artist_sets_selector");
-  assert.equal(res.card.artist, "Culture Shock");
-  assert.ok(res.card.sets.length >= 2);
+  try {
+    const events = [];
+    const res = await dispatchAgentWorkflow({
+      message: "帮我看看culture shock最近的演出",
+      onStream: (evt) => events.push(evt),
+    });
 
-  // Check emitted SSE events
-  const cardEvt = events.find((e) => e.type === "card");
-  assert.ok(cardEvt);
-  assert.equal(cardEvt.data.sourceType, "artist_sets_selector");
-  assert.ok(events.some((e) => e.type === "text" && e.data.includes("Culture Shock")));
+    assert.equal(res?.type, "artist_sets");
+    assert.ok(res?.card);
+    assert.equal(res.card.sourceType, "artist_sets_selector");
+    assert.equal(res.card.artist, "Culture Shock");
+    assert.ok(res.card.sets.length >= 2);
+
+    // Check emitted SSE events
+    const cardEvt = events.find((e) => e.type === "card");
+    assert.ok(cardEvt);
+    assert.equal(cardEvt.data.sourceType, "artist_sets_selector");
+    assert.ok(events.some((e) => e.type === "text" && e.data.includes("Culture Shock")));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolvePlaylistOutputPath, downloadAndExportTrack } from "../lib/audio-exporter.js";
+import { resolvePlaylistOutputPath, downloadAndExportTrack, getFfmpegBinary } from "../lib/audio-exporter.js";
 
 test("resolvePlaylistOutputPath creates subfolder under root directory", () => {
   const result = resolvePlaylistOutputPath("D:/DJ_Library", "House Hits 2026", "David Guetta", "Titanium");
@@ -59,4 +59,9 @@ test("downloadAndExportTrack conditionally sends Cookie header only to music.163
     const fs = await import("node:fs/promises");
     await fs.rm("./test_temp", { recursive: true, force: true }).catch(() => null);
   }
+});
+
+test("getFfmpegBinary resolves bundled or system ffmpeg path", () => {
+  const bin = getFfmpegBinary();
+  assert.ok(typeof bin === "string" && bin.length > 0);
 });

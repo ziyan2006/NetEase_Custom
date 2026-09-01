@@ -14,14 +14,15 @@ import { fileURLToPath } from "node:url";
 import { basename, extname, join, normalize, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { inspectAudioFile } from "./lib/audio-file.js";
-import { downloadAndExportTrack } from "./lib/audio-exporter.js";
+import { downloadAndExportTrack, getFfmpegBinary } from "./lib/audio-exporter.js";
 import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
 import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
-import { getTrendingTracksByGenre, getAvailableGenres } from "./lib/dj-agent/trend-radar.js";
 import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
+import { mapHarnessTrackSearchResults, parseHarnessTrackSearchRequest } from "./lib/dj-agent/harness-bridge.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
 import { SessionStore } from "./lib/session-store.js";
+import { HarnessRuntime } from "./lib/dj-agent/harness-runtime.js";
 
 const projectDirectory = fileURLToPath(new URL(".", import.meta.url));
 const publicDirectory = resolve(projectDirectory, "public");
@@ -106,7 +107,8 @@ function readRequestBody(request) {
 
 function runFfmpeg(args) {
   return new Promise((resolveProcess, rejectProcess) => {
-    const ffmpeg = spawn("ffmpeg", args, { windowsHide: true });
+    const bin = getFfmpegBinary();
+    const ffmpeg = spawn(bin, args, { windowsHide: true });
     let stderr = "";
     ffmpeg.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
     ffmpeg.on("error", rejectProcess);
@@ -502,8 +504,11 @@ async function runDiagnostic() {
 
 export function createAppServer() {
   const sessionStore = new SessionStore();
-  setTimeout(runDiagnostic, 2000);
-  return createHttpServer(async (request, response) => {
+  const harnessRuntime = new HarnessRuntime();
+  if (process.env.NODE_ENV !== "test") {
+    setTimeout(runDiagnostic, 2000);
+  }
+  const server = createHttpServer(async (request, response) => {
     const urlObj = new URL(request.url, `http://${request.headers.host || "127.0.0.1"}`);
 
     // ===== 对话会话管理 API (SQLite 持久化) =====
@@ -881,6 +886,8 @@ export function createAppServer() {
             history: effectiveHistory,
             cookie,
             config,
+            sessionId,
+            harnessRuntime,
             onStream: (evt) => {
               writeSseEvent(response, evt);
               if (evt.type === "text") acc.content += evt.data;
@@ -922,6 +929,37 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/search-tracks") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const { query, limit } = parseHarnessTrackSearchRequest(JSON.parse(bodyStr || "{}"));
+        const neteaseRes = await fetchNetEaseApi("/cloudsearch/pc", {
+          params: { s: query, type: 1, limit, offset: 0 },
+          cookie: "",
+        });
+        sendJson(response, 200, mapHarnessTrackSearchResults(query, neteaseRes?.result?.songs || []));
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness 曲库检索异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/analyze-transition") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const { fromKey, fromBpm, toKey, toBpm } = JSON.parse(bodyStr || "{}");
+        const fromTempo = Number(fromBpm);
+        const toTempo = Number(toBpm);
+        if (!fromKey || !toKey || !Number.isFinite(fromTempo) || !Number.isFinite(toTempo)) {
+          sendJson(response, 400, { message: "需要有效的前后曲目调性和 BPM" });
+          return;
+        }
+        sendJson(response, 200, analyzeTransition(String(fromKey), fromTempo, String(toKey), toTempo));
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness 调性分析异常: " + err.message });
+      }
+      return;
+    }
     if (request.method === "POST" && urlObj.pathname === "/api/agent/parse-1001tl") {
       try {
         const bodyStr = await readJsonBody(request);
@@ -951,28 +989,6 @@ export function createAppServer() {
       return;
     }
 
-    if (request.method === "GET" && urlObj.pathname === "/api/agent/trend-genres") {
-      sendJson(response, 200, { genres: getAvailableGenres() });
-      return;
-    }
-
-    if (request.method === "POST" && urlObj.pathname === "/api/agent/trend-radar") {
-      try {
-        const bodyStr = await readJsonBody(request);
-        const params = JSON.parse(bodyStr || "{}");
-        const { genre, cookie = "" } = params;
-
-        const genreData = await getTrendingTracksByGenre(genre);
-        const matchRes = await batchMatchTracklist(genreData.tracks, cookie);
-        sendJson(response, 200, {
-          genreData,
-          matchRes,
-        });
-      } catch (err) {
-        sendJson(response, 500, { message: "获取热单雷达异常: " + err.message });
-      }
-      return;
-    }
 
     if (request.method === "POST" && urlObj.pathname === "/api/agent/artist-sets") {
       try {
@@ -1107,6 +1123,27 @@ export function createAppServer() {
     }
     response.writeHead(405).end();
   });
+
+  const originalClose = server.close.bind(server);
+  let isClosed = false;
+  const cleanup = () => {
+    if (isClosed) return;
+    isClosed = true;
+    try {
+      sessionStore.close();
+    } catch { /* idempotent */ }
+    try {
+      harnessRuntime.close().catch(() => {});
+    } catch { /* idempotent */ }
+  };
+
+  server.on("close", cleanup);
+  server.close = function (cb) {
+    cleanup();
+    return originalClose(cb);
+  };
+
+  return server;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {

@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server.js",
     "electron": "electron .",
+    "harness:web": "node harness/start.mjs",
     "test": "node --test test/*.test.js",
     "build:dir": "electron-builder --dir",
     "build:portable": "electron-builder --win portable",
@@ -26,13 +27,15 @@
     "asarUnpack": [
       "**/ffmpeg-static/**",
       "**/node_modules/ffmpeg-static/**",
-      "**/node_modules/better-sqlite3/**"
+      "**/node_modules/better-sqlite3/**",
+      "harness/**"
     ],
     "files": [
       "main.js",
       "preload.cjs",
       "server.js",
       "lib/**/*",
+      "harness/*.mjs",
       "public/**/*",
       "package.json"
     ],
@@ -60,6 +63,12 @@
     }
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "4.0.1",
+    "@deepseek-ai/dsh": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-sdk-client": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-sdk-protocol": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-sdk-jsonrpc-server": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-tools": "0.1.0-rc.6",
     "better-sqlite3": "^13.0.3",
     "ffmpeg-static": "^5.3.0",
     "puppeteer-core": "^25.7.0",

@@ -46,14 +46,12 @@ async function main() {
   // 2. 调性和谐混音
   await runTest('2. Camelot 调性过渡技能 (camelot_harmonic_mixing)', '我现在正在播放 8A 调性的歌曲，接下来想做一个平滑过渡，推荐接什么调性？');
 
-  // 3. 流派榜单雷达
-  await runTest('3. 流派热单雷达技能 (genre_trend_radar)', '推荐几首本周 Beatport 榜单最热门的 Melodic Techno 单曲');
 
-  // 4. 自由对话与制作理论
-  await runTest('4. DJ 自由对话技能 (general_dj_chat)', '请教一下在先锋混音台上做三频 EQ 切换的技术要领');
+  // 3. 自由对话与制作理论
+  await runTest('3. DJ 自由对话技能 (general_dj_chat)', '请教一下在先锋混音台上做三频 EQ 切换的技术要领');
 
   console.log('========================================================================');
-  console.log('🎉 全部 4 种典型场景的纯 LLM 自主决策与渐进式披露验证完毕！');
+  console.log('🎉 全部 3 种典型场景的纯 LLM 自主决策与渐进式披露验证完毕！');
   console.log('========================================================================\n');
 }
 

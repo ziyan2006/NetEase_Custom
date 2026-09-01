@@ -7,15 +7,27 @@ release/
 *.log
 *.zip
 .DS_Store
+.agy-staff/
+
+# Local runtime databases and cookies
 data/sessions.db
 data/sessions.db-wal
 data/sessions.db-shm
+data/*_cookies.json
+data/charts_cache/
+data/chrome-profile/
+scripts/*_cookies.json
 
 # 随包 Linux Chrome (Chrome for Testing, 约 180MB, 用 scripts/setup-linux-chrome.sh 生成)
 bin/chrome-linux/
 
-# Chrome launcher 用户数据残留
+# Chrome launcher 用户数据残留，以及 Windows 把绝对路径写成项目根目录文件夹的情况
 lighthouse.*/
+*lighthouse.*/
+*lighthouse.*
 
-# 榜单数据缓存
-data/charts_cache/
+# DeepSeek Harness local profile, credentials, generated overlays, and isolated dependencies
+harness/.dsh-home/
+harness/.sdk-home/
+harness/.runtime/
+harness/node_modules/

@@ -430,7 +430,6 @@ function escapeHtml(str) {
 function getToolIcon(tool) {
   switch (tool) {
     case "1001tl_setlist_scraper": return "🌐";
-    case "genre_trend_radar": return "🔥";
     case "camelot_harmonic_mixing": return "🎛️";
     case "live_set_search": return "🎪";
     case "general_dj_chat": return "✨";
