@@ -132,6 +132,35 @@ test("routes the root to the DJ UI by default and honors the legacy fallback", (
   assert.equal(resolveStaticPath("/dj/"), "/dj/index.html");
 });
 
+test("CDN diagnostics never log short-lived signed audio URLs", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const previousDiagnostic = process.env.YESMUSIC_CDN_DIAGNOSTIC;
+  const signedUrl = "https://cdn.example.test/audio.mp3?auth=signed-url-secret";
+  const logged = [];
+  process.env.YESMUSIC_CDN_DIAGNOSTIC = "1";
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith("https://music.163.com/api/")) {
+      return new Response(JSON.stringify({ code: 200, data: [{ url: signedUrl }] }), { status: 200 });
+    }
+    return new Response("", { status: 403 });
+  };
+  console.log = (...args) => logged.push(args.map(String).join(" "));
+  const server = createAppServer();
+  try {
+    await new Promise(resolve => setTimeout(resolve, 2300));
+    const joined = logged.join("\n");
+    assert.match(joined, /cdn\.example\.test/);
+    assert.doesNotMatch(joined, /signed-url-secret|auth=/);
+  } finally {
+    if (server.listening) await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    if (previousDiagnostic === undefined) delete process.env.YESMUSIC_CDN_DIAGNOSTIC;
+    else process.env.YESMUSIC_CDN_DIAGNOSTIC = previousDiagnostic;
+  }
+});
+
 test("streams realtime progress events while exporting a playlist (SSE)", async () => {
   const originalFetch = globalThis.fetch;
   const mp3Bytes = Uint8Array.from([0x49, 0x44, 0x33, 0, 0, 0, 0, 0, 0, 0]);
@@ -207,6 +236,9 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     assert.equal(doneEvt.successCount, 2);
     assert.equal(doneEvt.failedCount, 0);
     assert.equal(doneEvt.overall, 100);
+    const exportedFiles = await readdir("./test_export_temp/Test PL");
+    assert.equal(exportedFiles.filter(file => file.endsWith(".mp3")).length, doneEvt.successCount, "successful SSE count must match audio files written to disk");
+    assert.deepEqual(exportedFiles.sort(), ["Artist A - Song One.mp3", "Artist B - Song Two.mp3"]);
 
     const completedUpstreamCalls = upstreamCallCount;
     const resumed = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {

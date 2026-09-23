@@ -517,14 +517,16 @@ async function runDiagnostic() {
       console.log("[DIAGNOSTIC] Failed to get player URL.");
       return;
     }
-    console.log("[DIAGNOSTIC] Target CDN URL:", downloadUrl);
+    // CDN URLs may contain short-lived signatures. Keep diagnostics useful
+    // without writing those credentials into terminal or persistent logs.
+    console.log("[DIAGNOSTIC] Target CDN host:", new URL(downloadUrl).hostname);
 
     // Case 1: No headers
     try {
       const r1 = await fetch(downloadUrl);
       console.log(`[DIAGNOSTIC] Case 1 (No Headers) Status: ${r1.status}`);
     } catch (e) {
-      console.log(`[DIAGNOSTIC] Case 1 failed: ${e.message}`);
+      console.log(`[DIAGNOSTIC] Case 1 failed: ${e?.name || "NetworkError"}`);
     }
 
     // Case 2: Browser UA + Referer
@@ -537,10 +539,10 @@ async function runDiagnostic() {
       });
       console.log(`[DIAGNOSTIC] Case 2 (UA + Referer) Status: ${r2.status}`);
     } catch (e) {
-      console.log(`[DIAGNOSTIC] Case 2 failed: ${e.message}`);
+      console.log(`[DIAGNOSTIC] Case 2 failed: ${e?.name || "NetworkError"}`);
     }
   } catch (err) {
-    console.log("[DIAGNOSTIC] Error running diagnostic:", err.message);
+    console.log(`[DIAGNOSTIC] Error running diagnostic: ${err?.name || "NetworkError"}`);
   }
 }
 
