@@ -23,6 +23,45 @@ export class NeteaseApiError extends Error {
   }
 }
 
+export type PlaylistExportEvent = {
+  type?: string;
+  [key: string]: unknown;
+};
+
+export class SseJsonParser {
+  private buffer = "";
+
+  constructor(private onEvent: (event: PlaylistExportEvent) => void) {}
+
+  push(chunk: string) {
+    this.buffer += chunk;
+    let boundary: RegExpExecArray | null;
+    while ((boundary = /\r?\n\r?\n/.exec(this.buffer))) {
+      const frame = this.buffer.slice(0, boundary.index);
+      this.buffer = this.buffer.slice(boundary.index + boundary[0].length);
+      this.parseFrame(frame);
+    }
+  }
+
+  finish() {
+    if (this.buffer.trim()) this.parseFrame(this.buffer);
+    this.buffer = "";
+  }
+
+  private parseFrame(frame: string) {
+    const data = frame.split(/\r\n|\n|\r/)
+      .filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).replace(/^ /, ""))
+      .join("\n");
+    if (!data) return;
+    let event: unknown;
+    try { event = JSON.parse(data); }
+    catch { throw new NeteaseApiError("导出服务返回了无法解析的进度事件。", 502); }
+    if (!event || typeof event !== "object" || Array.isArray(event)) return;
+    this.onEvent(event as PlaylistExportEvent);
+  }
+}
+
 const COOKIE_KEY = "netease_cookie";
 
 export function getNeteaseCookie(): string {
@@ -143,6 +182,57 @@ export const yesmusicApi = {
     const result = Array.isArray(payload.data) ? payload.data : Array.isArray(record(payload.data).data) ? record(payload.data).data as unknown[] : [];
     const first = record(result[0]);
     return text(first.url) || null;
+  },
+
+  async exportPlaylist(input: { id: string; name: string; outputRoot: string }, onEvent: (event: PlaylistExportEvent) => void, signal?: AbortSignal): Promise<void> {
+    const cookie = getNeteaseCookie();
+    if (!cookie) throw new NeteaseApiError("请先登录网易云账号，再导出歌单。", 401);
+    const response = await fetch("/api/playlist/export", {
+      method: "POST",
+      headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
+      body: JSON.stringify({ ...input, cookie }),
+      signal,
+      credentials: "same-origin",
+    });
+    if (!response.ok) {
+      const payload = record(await response.json().catch(() => null));
+      throw new NeteaseApiError(text(payload.message) || `导出请求失败（HTTP ${response.status}）`, response.status, payload);
+    }
+    if (!response.headers.get("content-type")?.toLocaleLowerCase().includes("text/event-stream")) {
+      const payload = record(await response.json().catch(() => null));
+      throw new NeteaseApiError(text(payload.message) || "服务端没有返回实时导出进度。", 502, payload);
+    }
+    if (!response.body) throw new NeteaseApiError("导出连接没有提供进度流。", 502);
+    let receivedDone = false;
+    const parser = new SseJsonParser(event => {
+      if (event.type === "done") receivedDone = true;
+      onEvent(event);
+    });
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.push(decoder.decode(value, { stream: true }));
+      }
+      parser.push(decoder.decode());
+      parser.finish();
+    } catch (error) {
+      await reader.cancel().catch(() => undefined);
+      throw error;
+    }
+    if (!receivedDone) throw new NeteaseApiError("导出连接已结束，但没有收到完成事件；结果未完整确认。", 502);
+  },
+
+  async exportSong(id: string, outputRoot: string): Promise<{ fileName: string; filePath: string }> {
+    if (!id) throw new NeteaseApiError("缺少歌曲 ID", 400);
+    if (!outputRoot.trim()) throw new NeteaseApiError("请先设置导出根目录。", 400);
+    const payload = record(await requestJson<unknown>("/api/song/export", {
+      method: "POST",
+      body: { id, outputRoot: outputRoot.trim() },
+    }));
+    return { fileName: text(payload.fileName), filePath: text(payload.filePath) };
   },
 
   async createPlaylist(name: string): Promise<void> {

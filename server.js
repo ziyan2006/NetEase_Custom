@@ -275,7 +275,7 @@ export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, c
 
   const tracks = playlistRes?.playlist?.tracks || [];
   if (tracks.length === 0) {
-    const emptySummary = { code: 200, message: "歌单内无任何歌曲", successCount: 0, failedCount: 0, successTracks: [], failedTracks: [] };
+    const emptySummary = { code: 200, message: "歌单内无任何歌曲", total: 0, completed: 0, successCount: 0, failedCount: 0, successTracks: [], failedTracks: [] };
     emit({ type: "done", ...emptySummary, overall: 100 });
     return emptySummary;
   }
@@ -488,6 +488,8 @@ export async function exportPlaylistWithEvents({ id, name, outputRoot, cookie, c
   const summary = {
     code: 200,
     message: `歌单多线程并行导出完成！(并发线程: ${effectiveConcurrency})`,
+    total: tracks.length,
+    completed: completedCount,
     successCount,
     failedCount,
     successTracks,
@@ -816,14 +818,73 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "POST" && urlObj.pathname === "/api/song/export") {
+      try {
+        const params = JSON.parse(await readJsonBody(request) || "{}");
+        const id = String(params.id ?? "").trim();
+        const outputRoot = typeof params.outputRoot === "string" ? params.outputRoot.trim() : "";
+        const cookie = typeof params.cookie === "string" ? params.cookie : "";
+
+        if (!/^\d+$/.test(id)) {
+          sendJson(response, 400, { message: "缺少有效歌曲 ID" });
+          return;
+        }
+        if (!outputRoot) {
+          sendJson(response, 400, { message: "请先设置导出根目录" });
+          return;
+        }
+        if (!cookie) {
+          sendJson(response, 401, { message: "请先登录网易云账号，再下载歌曲" });
+          return;
+        }
+
+        const detail = await fetchNetEaseApi("/song/detail", {
+          params: { ids: JSON.stringify([id]), timestamp: Date.now() },
+          cookie,
+        });
+        const song = Array.isArray(detail?.songs) ? detail.songs.find(item => String(item.id) === id) : null;
+        if (!song) {
+          sendJson(response, 404, { message: "网易云没有返回这首歌曲的元数据" });
+          return;
+        }
+        const urlPayload = await fetchNetEaseApi("/song/enhance/player/url/v1", {
+          method: "POST",
+          body: { ids: `[${id}]`, level: "exhigh", encodeType: "flac" },
+          cookie,
+        });
+        const urlItem = Array.isArray(urlPayload?.data) ? urlPayload.data.find(item => String(item.id) === id) : null;
+        if (!urlItem?.url) {
+          sendJson(response, 422, { message: "此曲目暂无可下载音源，可能受版权或会员权限限制" });
+          return;
+        }
+        const artist = song.ar?.map(item => item.name).filter(Boolean).join(" / ")
+          || song.artists?.map(item => item.name).filter(Boolean).join(" / ")
+          || "未知艺人";
+        const title = String(song.name || song.title || "未命名曲目");
+        const result = await downloadAndExportTrack({
+          outputRoot,
+          playlistName: null,
+          artist,
+          title,
+          downloadUrl: urlItem.url,
+          cookie,
+        });
+        sendJson(response, 200, { code: 200, fileName: basename(result.filePath), filePath: result.filePath });
+      } catch (error) {
+        console.error("单曲导出失败", error);
+        sendJson(response, 500, { message: `单曲导出失败：${error instanceof Error ? error.message : "未知错误"}` });
+      }
+      return;
+    }
+
     if (request.method === "POST" && urlObj.pathname === "/api/playlist/export") {
       try {
         const bodyStr = await readJsonBody(request);
         const params = JSON.parse(bodyStr);
         const { id, name, outputRoot, cookie } = params;
 
-        if (!id || !name) {
-          sendJson(response, 400, { message: "缺少必要参数: id, name" });
+        if (!id || !name || typeof outputRoot !== "string" || !outputRoot.trim()) {
+          sendJson(response, 400, { message: "缺少必要参数: id, name, outputRoot" });
           return;
         }
 

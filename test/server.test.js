@@ -1,7 +1,9 @@
 process.env.NODE_ENV = "test";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createAppServer } from "../server.js";
 
 function createMultipartBody(fields) {
@@ -199,6 +201,66 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     globalThis.fetch = originalFetch;
     const fs = await import("node:fs/promises");
     await fs.rm("./test_export_temp", { recursive: true, force: true }).catch(() => null);
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("exports one authenticated song by ID directly into the configured output root", async () => {
+  const originalFetch = globalThis.fetch;
+  const outputRoot = await mkdtemp(join(tmpdir(), "yesmusic-single-export-"));
+  const mp3Bytes = Uint8Array.from([0x49, 0x44, 0x33, 1, 2, 3, 4, 5, 6, 7, 8]);
+  const upstreamCalls = [];
+  globalThis.fetch = async (url, options) => {
+    const urlStr = String(url);
+    if (urlStr.startsWith("http://127.0.0.1")) return originalFetch(url, options);
+    upstreamCalls.push({ url: urlStr, options });
+    if (urlStr.includes("/song/detail")) {
+      return new Response(JSON.stringify({ code: 200, songs: [
+        { id: 9081, name: "Fixture Opening", ar: [{ name: "Fixture Artist" }] },
+      ] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr.includes("/song/enhance/player/url/v1")) {
+      return new Response(JSON.stringify({ code: 200, data: [{ id: 9081, url: "http://fake-cdn.local/fixture.mp3" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr.startsWith("http://fake-cdn.local/")) {
+      return new Response(mp3Bytes, { status: 200, headers: { "content-type": "audio/mpeg" } });
+    }
+    throw new Error(`Unexpected upstream request: ${urlStr}`);
+  };
+
+  const server = createAppServer();
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/api/song/export`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "9081", outputRoot }),
+    });
+    assert.equal(unauthorized.status, 401);
+    assert.deepEqual(await readdir(outputRoot), []);
+
+    const mismatchedId = await fetch(`http://127.0.0.1:${port}/api/song/export`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "9999", outputRoot, cookie: "MUSIC_U=fixture" }),
+    });
+    assert.equal(mismatchedId.status, 404);
+    assert.deepEqual(await readdir(outputRoot), []);
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/song/export`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "9081", outputRoot, cookie: "MUSIC_U=fixture" }),
+    });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.code, 200);
+    assert.equal(result.fileName, "Fixture Artist - Fixture Opening.mp3");
+    assert.equal(result.filePath, join(outputRoot, result.fileName));
+    assert.deepEqual(await readFile(result.filePath), Buffer.from(mp3Bytes));
+    assert.equal(upstreamCalls.length, 4);
+    assert.ok(upstreamCalls.filter(({ url }) => url.includes("music.163.com/api/")).every(({ options }) => options.headers.Cookie.includes("MUSIC_U=fixture")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    await rm(outputRoot, { recursive: true, force: true });
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });

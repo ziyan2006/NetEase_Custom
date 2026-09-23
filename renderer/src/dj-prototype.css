@@ -8,6 +8,7 @@ html[data-dj-prototype="true"] .back-button { min-height: 46px; gap: 12px; paddi
 html[data-dj-prototype="true"] .back-button:hover { transform: translateY(-1px); border-color: #292b26; background: #292b26; color: #fff; }
 html[data-dj-prototype="true"] .back-button small { margin-left: 4px; border-color: #f4f1e966; color: #f4f1e9; }
 html[data-dj-prototype="true"] .system-nav { top: 70px; gap: 25px; }
+html[data-dj-prototype="true"] #stage[data-dj-drawer-open="true"] .system-nav { z-index: 4; }
 html[data-dj-prototype="true"] #stage[data-workbench="true"] .system-nav > .dj-account-button { display: flex; }
 html[data-dj-prototype="true"] .system-nav .dj-account-button { border-left: 1px solid #aaa59a; padding-left: 20px; font-size: 13px; white-space: nowrap; }
 html[data-dj-prototype="true"] .dj-account-dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 auto; background: #a27849; }
@@ -111,6 +112,20 @@ html[data-dj-prototype="true"] .wb-playlist-export-complete strong { font-size: 
 html[data-dj-prototype="true"] .wb-playlist-export-complete span, html[data-dj-prototype="true"] .wb-playlist-export-complete small { color: #77756d; font-size: 9px; }
 html[data-dj-prototype="true"] .wb-playlist-export-complete i { display: block; height: 4px; margin: 9px 0 6px; background: #c8c2b7; }
 html[data-dj-prototype="true"] .wb-playlist-export-complete i b { display: block; width: 100%; height: 100%; background: #a27849; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress { border: 1px solid #c4beb2; border-left: 3px solid #a27849; margin: 0 0 18px; padding: 13px 15px; background: #e5e1d8; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head { display: flex; align-items: center; gap: 14px; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head > span:first-child { display: grid; flex: 1; gap: 5px; min-width: 0; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head small { color: #77756d; font-size: 9px; letter-spacing: .12em; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head strong { overflow: hidden; font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head > span:nth-child(2) { font-size: 18px; font-variant-numeric: tabular-nums; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-head button { min-height: 32px; border: 1px solid #aaa59a; padding: 0 9px; font-size: 10px; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-track { height: 5px; margin: 10px 0 8px; background: #c8c2b7; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-track i { display: block; height: 100%; background: #a27849; transition: width 180ms ease-out; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-meta { display: flex; flex-wrap: wrap; gap: 5px 16px; color: #77756d; font-size: 9px; }
+html[data-dj-prototype="true"] .wb-playlist-export-current { display: block; margin-top: 8px; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress > p { margin: 8px 0 0; color: #8b4f37; font-size: 10px; line-height: 1.5; }
+html[data-dj-prototype="true"] .wb-playlist-export-target { display: grid; gap: 7px; margin: 0 0 24px; color: #77756d; font-size: 10px; }
+html[data-dj-prototype="true"] .wb-playlist-export-target code { overflow-wrap: anywhere; border: 1px solid #c4beb2; padding: 10px; background: #e8e5dc; color: #191916; font-family: "MiSans", sans-serif; font-size: 11px; letter-spacing: normal; }
 html[data-dj-prototype="true"] .wb-playlist-track-heading { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #aaa59a; padding: 14px 0 10px; color: #77756d; font-size: 9px; letter-spacing: .1em; }
 html[data-dj-prototype="true"] .wb-playlist-track-list { border-bottom: 1px solid #aaa59a; }
 html[data-dj-prototype="true"] .wb-playlist-track-row { display: grid; grid-template-columns: 28px minmax(0,1fr) 46px auto; align-items: center; gap: 10px; min-height: 56px; border-bottom: 1px solid #d1ccc2; }
@@ -249,6 +264,7 @@ html[data-dj-prototype="true"] .wb-dj-root label { display: block; margin: 10px 
   html[data-dj-prototype="true"] .wb-playlist-drawer { position: fixed; top: 100px; right: 0; bottom: 50px; left: 0; width: auto; padding: 18px; }
   html[data-dj-prototype="true"] .wb-playlist-confirm-layer { padding: 12px; }
   html[data-dj-prototype="true"] .wb-playlist-export-confirm { padding: 22px; }
+  html[data-dj-prototype="true"] .wb-playlist-export-progress-meta { gap: 6px 10px; }
   html[data-dj-prototype="true"] .wb-playlist-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
   html[data-dj-prototype="true"] .wb-playlist-card { padding: 6px; }
   html[data-dj-prototype="true"] .wb-playlist-card-actions { top: 14px; right: 14px; }

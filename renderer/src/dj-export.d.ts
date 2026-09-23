@@ -1,0 +1,35 @@
+export type PlaylistExportPhase = "confirm" | "running" | "done" | "error";
+export type PlaylistExportState = {
+  playlistId: string;
+  name: string;
+  coverUrl: string | null;
+  total: number;
+  completed: number;
+  success: number;
+  failed: number;
+  overallPercent: number;
+  phase: PlaylistExportPhase;
+  stage: string;
+  currentTrack: string;
+  message: string;
+  finishedTrackKeys: string[];
+};
+export type PlaylistExportEvent = {
+  type?: string;
+  total?: number;
+  completed?: number;
+  overall?: number;
+  index?: number;
+  title?: string;
+  artist?: string;
+  phase?: string;
+  successCount?: number;
+  failedCount?: number;
+  message?: string;
+  reason?: string;
+  [key: string]: unknown;
+};
+export function createPlaylistExportState(playlist: { id: string; name: string; trackCount: number; coverUrl?: string | null }, phase?: PlaylistExportPhase): PlaylistExportState;
+export function reducePlaylistExportEvent(state: PlaylistExportState, event: PlaylistExportEvent): PlaylistExportState;
+export function failPlaylistExport(state: PlaylistExportState, error: unknown): PlaylistExportState;
+export function toSceneExportProgress(state: PlaylistExportState): Omit<PlaylistExportState, "finishedTrackKeys">;

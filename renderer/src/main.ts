@@ -42,6 +42,7 @@ import "./startup.css";
 import "./wallpaper.css";
 import { Workbench } from "./workbench";
 import { djPreview, setDjPreview } from "./dj-records";
+import { createPlaylistExportState, failPlaylistExport, reducePlaylistExportEvent, toSceneExportProgress } from "./dj-export.js";
 let workbench: Workbench | undefined;
 import { ArchivePlayground } from "./archive-playground";
 import { ARRAY_OPENING_END, openingShowsDetail } from "./wallpaper-opening";
@@ -63,7 +64,7 @@ let wallpaperEffects: WallpaperEffects | undefined;
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
 import { logo, brandHeading } from "./brand";
-import { clearNeteaseCookie, getNeteaseCookie, saveNeteaseCookie, yesmusicApi, NeteaseApiError } from "./yesmusic-api";
+import { clearNeteaseCookie, getNeteaseCookie, saveNeteaseCookie, yesmusicApi, NeteaseApiError, type NeteasePlaylist } from "./yesmusic-api";
 
 $("#stage").innerHTML = `
   <div id="three-scene" class="three-scene"></div>
@@ -265,8 +266,29 @@ let resumeSelection = -1;
 let viewer: ModelViewer | undefined;
 const accessLog: { id: string; time: string }[] = [];
 const columnMemory = archiveColumns.map((_, lane) => columnFiles(lane)[0]);
-function startPlaylistExport(_playlist: { name: string; total: number; cover: string }) {
-  notify("歌单导出功能尚未接入，当前没有启动任务或写入文件。");
+async function startPlaylistExport(playlist: NeteasePlaylist, outputRoot: string, onState: (state: ReturnType<typeof createPlaylistExportState>) => void) {
+  const exportIndex = records.findIndex(record => record.en === "EXPORT PROGRESS");
+  if (exportIndex < 0) throw new Error("没有找到歌单导出进度档案。");
+  const stage = $("#stage");
+  stage.dataset.playlistExporting = "true";
+  delete stage.dataset.playlistExportComplete;
+  let state = createPlaylistExportState(playlist, "running");
+  select(exportIndex);
+  scene?.setExportProgress(toSceneExportProgress(state));
+  onState(state);
+  try {
+    await yesmusicApi.exportPlaylist({ id: playlist.id, name: playlist.name, outputRoot }, event => {
+      state = reducePlaylistExportEvent(state, event);
+      if (state.phase === "done" || state.phase === "error") stage.dataset.playlistExportComplete = "true";
+      scene?.setExportProgress(toSceneExportProgress(state));
+      onState(state);
+    });
+  } catch (error) {
+    if (state.phase !== "error") state = failPlaylistExport(state, error);
+    stage.dataset.playlistExportComplete = "true";
+    scene?.setExportProgress(toSceneExportProgress(state));
+    onState(state);
+  }
 }
 function recordAccess() {
   accessLog.unshift({
@@ -1537,7 +1559,7 @@ if (isWallpaper) {
     setDjPreview(track ? { title: track.title, artist: track.artists.join(" / "), album: track.album, coverUrl: track.coverUrl } : null);
     const trackIndex = records.findIndex(record => record.en === "TRACK PREVIEW");
     if (trackIndex >= 0 && ready && !modal) select(trackIndex);
-  }, playlist => startPlaylistExport(playlist));
+  }, (playlist, outputRoot, onState) => startPlaylistExport(playlist, outputRoot, onState));
   playground = new ArchivePlayground($("#stage"), () => scene,
     () => ({ enabled: !!workbench?.enabled && mode === "archive" && ready, paused: Boolean(modal) || modalClosing || Boolean(wallpaperHost()?.paused) || document.hidden, reduced: prefs.reduced }),
     value => { musicSuppressed = value; configureAudio(); }, () => audio.play("tick"));

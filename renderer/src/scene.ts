@@ -266,7 +266,11 @@ export class ArchiveScene {
   private exportScreenTexture?: THREE.CanvasTexture;
   private labelMark = new Image();
   private selectedArchiveIndex = 0;
-  private exportProgress: { name: string; completed: number; total: number; cover: string } | null = null;
+  private exportProgress: {
+    playlistId: string; name: string; coverUrl: string | null; completed: number; total: number;
+    success: number; failed: number; overallPercent: number; phase: "confirm" | "running" | "done" | "error";
+    stage: string; currentTrack: string; message: string;
+  } | null = null;
   private exportCover?: HTMLImageElement;
   private reduced = false;
   private quality = normalizeQuality(undefined);
@@ -870,17 +874,22 @@ export class ArchiveScene {
     this.drawLabel(index);
     this.syncExportScreen();
   }
-  setExportProgress(progress: { name: string; completed: number; total: number; cover: string } | null) {
+  setExportProgress(progress: {
+    playlistId: string; name: string; coverUrl: string | null; completed: number; total: number;
+    success: number; failed: number; overallPercent: number; phase: "confirm" | "running" | "done" | "error";
+    stage: string; currentTrack: string; message: string;
+  } | null) {
     this.exportProgress = progress;
     this.syncExportScreen();
-    if (progress && this.exportCover?.src !== progress.cover) {
+    if (progress?.coverUrl && this.exportCover?.src !== progress.coverUrl) {
       const image = new Image();
+      image.crossOrigin = "anonymous";
       image.onload = () => {
-        if (this.exportProgress?.cover !== progress.cover) return;
+        if (this.exportProgress?.coverUrl !== progress.coverUrl) return;
         this.exportCover = image;
         this.drawExportScreen();
       };
-      image.src = progress.cover;
+      image.src = progress.coverUrl;
     }
     this.drawLabel(this.selectedArchiveIndex);
   }
@@ -899,7 +908,7 @@ export class ArchiveScene {
     const texture = this.exportScreenTexture;
     const progress = this.exportProgress ?? (
       this.isExportArchive()
-        ? { name: "等待歌单导出", completed: 0, total: 0, cover: "" }
+        ? { playlistId: "", name: "等待歌单导出", coverUrl: null, completed: 0, total: 0, success: 0, failed: 0, overallPercent: 0, phase: "confirm" as const, stage: "等待确认", currentTrack: "", message: "" }
         : null
     );
     if (!texture || !progress) return;
@@ -907,9 +916,8 @@ export class ArchiveScene {
     if (!c) return;
     const width = this.exportScreenCanvas.width;
     const height = this.exportScreenCanvas.height;
-    const ratio = progress.total > 0
-      ? THREE.MathUtils.clamp(progress.completed / progress.total, 0, 1)
-      : 0;
+    const percent = Math.max(0, Math.min(100, Number(progress.overallPercent) || 0));
+    const ratio = percent / 100;
     c.clearRect(0, 0, width, height);
     c.fillStyle = "#e9e6de";
     c.fillRect(0, 0, width, height);
@@ -923,7 +931,10 @@ export class ArchiveScene {
     c.fillStyle = "#7f7b70";
     c.font = "600 34px MiSans, sans-serif";
     c.textAlign = "right";
-    c.fillText(progress.completed >= progress.total ? "COMPLETE" : "EXPORTING", width - 36, 78);
+    const status = progress.phase === "error" ? "RESULT UNKNOWN"
+      : progress.phase === "done" ? progress.failed ? "PARTIAL" : "COMPLETE"
+      : progress.phase === "confirm" ? "AWAITING CONFIRMATION" : "EXPORTING";
+    c.fillText(status, width - 36, 78);
     c.textAlign = "left";
 
     const coverX = 42, coverY = 48, coverSize = 560;
@@ -932,19 +943,12 @@ export class ArchiveScene {
     if (this.exportCover?.complete && this.exportCover.naturalWidth) {
       const image = this.exportCover;
       const targetX = coverX + 5, targetY = coverY + 5, targetSize = coverSize - 10;
-      const sourceAspect = image.naturalWidth / image.naturalHeight;
-      let sourceX = 0, sourceY = 0;
-      let sourceWidth = image.naturalWidth, sourceHeight = image.naturalHeight;
-      if (sourceAspect > 1) {
-        sourceWidth = image.naturalHeight;
-        sourceX = (image.naturalWidth - sourceWidth) / 2;
-      } else {
-        sourceHeight = image.naturalWidth;
-        sourceY = (image.naturalHeight - sourceHeight) / 2;
-      }
+      const scale = Math.min(targetSize / image.naturalWidth, targetSize / image.naturalHeight);
+      const drawWidth = image.naturalWidth * scale, drawHeight = image.naturalHeight * scale;
+      const drawX = targetX + (targetSize - drawWidth) / 2, drawY = targetY + (targetSize - drawHeight) / 2;
       c.save();
       c.filter = "grayscale(72%) contrast(94%)";
-      c.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, targetX, targetY, targetSize, targetSize);
+      c.drawImage(image, drawX, drawY, drawWidth, drawHeight);
       c.restore();
     } else {
       c.fillStyle = "#252522";
@@ -956,39 +960,58 @@ export class ArchiveScene {
 
     const infoX = 652;
     c.fillStyle = "#7f7b70";
-    c.font = "600 34px MiSans, sans-serif";
-    c.fillText("NOW EXPORTING", infoX, 152);
+    c.font = "600 32px MiSans, 'Noto Sans CJK SC', sans-serif";
+    c.fillText(progress.phase === "confirm" ? "EXPORT READY" : "EXPORT STATUS / 导出状态", infoX, 142);
     c.fillStyle = "#191916";
-    c.font = "600 70px MiSans, sans-serif";
-    c.fillText(progress.name, infoX, 232, width - infoX - 42);
+    c.font = "600 62px MiSans, 'Noto Sans CJK SC', sans-serif";
+    c.fillText(progress.name, infoX, 220, width - infoX - 42);
     c.fillStyle = "rgba(23, 23, 19, 0.24)";
-    c.fillRect(infoX, 262, width - infoX - 42, 2);
+    c.fillRect(infoX, 248, width - infoX - 42, 2);
+    c.textAlign = "left";
+    const statY = 300;
+    const columns = [infoX, infoX + 190, infoX + 380];
+    const stats: [string, number, string][] = [["TOTAL / 曲目", progress.total, "TRACKS"], ["SUCCESS / 成功", progress.success, "SAVED"], ["FAILED / 失败", progress.failed, "FAILED"]];
+    stats.forEach(([label, value, suffix], index) => {
+      c.fillStyle = "#7f7b70";
+      c.font = "500 22px MiSans, 'Noto Sans CJK SC', sans-serif";
+      c.fillText(label, columns[index], statY);
+      c.fillStyle = "#191916";
+      c.font = "600 58px MiSans, sans-serif";
+      c.fillText(String(value), columns[index], statY + 72);
+      c.fillStyle = "#7f7b70";
+      c.font = "500 18px MiSans, sans-serif";
+      c.fillText(suffix, columns[index] + 4, statY + 101);
+    });
+    c.fillStyle = "rgba(23, 23, 19, 0.24)";
+    c.fillRect(infoX, 430, width - infoX - 42, 2);
     c.fillStyle = "#7f7b70";
-    c.font = "500 38px MiSans, sans-serif";
-    c.fillText("PLAYLIST TRACKS", infoX, 326);
+    c.font = "500 23px MiSans, 'Noto Sans CJK SC', sans-serif";
+    c.fillText(progress.stage || "等待服务端进度", infoX, 472);
     c.fillStyle = "#191916";
-    c.font = "600 84px MiSans, sans-serif";
-    c.fillText(String(progress.total).padStart(2, "0"), infoX, 420);
-    c.fillStyle = "#7f7b70";
-    c.font = "500 30px MiSans, sans-serif";
-    c.fillText("SONGS", infoX + 112, 414);
+    c.font = "500 27px MiSans, 'Noto Sans CJK SC', sans-serif";
+    c.fillText(progress.currentTrack || progress.message || "等待服务端开始处理", infoX, 516, width - infoX - 42);
+    if (progress.message && progress.currentTrack) {
+      c.fillStyle = progress.phase === "error" || progress.failed > 0 ? "#8b4f37" : "#77756d";
+      c.font = "500 20px MiSans, 'Noto Sans CJK SC', sans-serif";
+      c.fillText(progress.message, infoX, 552, width - infoX - 42);
+    }
 
-    const barX = 44, barY = 612, barWidth = width - 88;
+    const barX = 44, barY = 608, barWidth = width - 88;
     c.fillStyle = "#c8c2b7";
     c.fillRect(barX, barY, barWidth, 16);
     c.fillStyle = "#a27849";
     c.fillRect(barX, barY, barWidth * ratio, 16);
     c.fillStyle = "#191916";
-    c.font = "600 38px MiSans, sans-serif";
-    c.fillText(`${String(progress.completed).padStart(2, "0")} / ${String(progress.total).padStart(2, "0")} TRACKS`, barX, 652);
+    c.font = "600 28px MiSans, sans-serif";
+    c.fillText(`${String(progress.completed).padStart(2, "0")} / ${String(progress.total).padStart(2, "0")} TRACKS`, barX, 660);
     c.textAlign = "center";
     c.fillStyle = "#7f7b70";
-    c.font = "500 28px MiSans, sans-serif";
-    c.fillText(progress.completed >= progress.total ? "EXPORT COMPLETE" : "EXPORT IN PROGRESS", width / 2, 652);
+    c.font = "500 20px MiSans, 'Noto Sans CJK SC', sans-serif";
+    c.fillText(progress.phase === "done" ? (progress.failed ? "部分完成 / PARTIAL" : "全部完成 / COMPLETE") : progress.phase === "error" ? "导出中断 / RESULT UNKNOWN" : progress.stage, width / 2, 660);
     c.textAlign = "right";
     c.fillStyle = "#191916";
-    c.font = "600 54px MiSans, sans-serif";
-    c.fillText(`${Math.round(ratio * 100)}%`, width - 42, 656);
+    c.font = "600 44px MiSans, sans-serif";
+    c.fillText(`${Math.round(percent)}%`, width - 42, 660);
     c.textAlign = "left";
     texture.needsUpdate = true;
   }
