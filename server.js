@@ -12,7 +12,7 @@ import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { basename, extname, join, normalize, resolve } from "node:path";
+import { basename, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { inspectAudioFile } from "./lib/audio-file.js";
 import { downloadAndExportTrack, getFfmpegBinary } from "./lib/audio-exporter.js";
@@ -38,9 +38,27 @@ const outputFormats = new Map([
 ]);
 
 const contentTypes = {
+  ".avif": "image/avif",
+  ".bin": "application/octet-stream",
   ".css": "text/css; charset=utf-8",
+  ".glb": "model/gltf-binary",
   ".html": "text/html; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
   ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+  ".webmanifest": "application/manifest+json",
+  ".webp": "image/webp",
+  ".wav": "audio/wav",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
 };
 
 function sendJson(response, statusCode, payload) {
@@ -172,9 +190,22 @@ async function convertUpload(request, response) {
 }
 
 async function serveStatic(request, response) {
-  const requestedPath = request.url === "/" ? "/index.html" : request.url.split("?")[0];
-  const filePath = normalize(join(publicDirectory, requestedPath));
-  if (!filePath.startsWith(publicDirectory)) {
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
+  } catch {
+    response.writeHead(400).end();
+    return;
+  }
+
+  if (pathname === "/" && process.env.YESMUSIC_UI === "dj") pathname = "/dj/index.html";
+  else if (pathname === "/" || pathname === "/dj" || pathname === "/dj/") {
+    pathname = pathname === "/" ? "/index.html" : "/dj/index.html";
+  }
+
+  const filePath = resolve(publicDirectory, `.${pathname}`);
+  const relativePath = relative(publicDirectory, filePath);
+  if (!relativePath || relativePath === "." || relativePath.startsWith("..") || isAbsolute(relativePath)) {
     response.writeHead(403).end();
     return;
   }

@@ -4,6 +4,8 @@ dist/
 dist_app/
 dist_installer/
 release/
+public/dj/
+renderer/public/archives/
 *.log
 *.zip
 .DS_Store

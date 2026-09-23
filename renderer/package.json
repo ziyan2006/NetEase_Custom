@@ -1,0 +1,20 @@
+{
+  "name": "yesmusic-dj-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:yesmusic": "node scripts/patch-rolling-number.mjs && node scripts/export-records.mjs",
+    "dev": "npm run prepare:yesmusic && vite --host 127.0.0.1 --mode yesmusic --port 5176",
+    "build": "npm run prepare:yesmusic && tsc && vite build --mode yesmusic --outDir ../public/dj --emptyOutDir"
+  },
+  "dependencies": {
+    "@kitlangton/rolling-number": "0.4.1",
+    "three": "^0.183.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1"
+  }
+}

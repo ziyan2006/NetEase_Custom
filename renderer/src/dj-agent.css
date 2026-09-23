@@ -1,0 +1,139 @@
+/* The Agent uses the same warm paper, ink and brass as the shared drawer. */
+html[data-dj-prototype="true"] .wb-playlist-drawer[data-dj-drawer-mode="agent"] { padding: 0; }
+.wb-agent-panel { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; color: #080a08; }
+.wb-agent-panel *, .wb-agent-panel *::before, .wb-agent-panel *::after { box-sizing: border-box; }
+.wb-agent-panel button, .wb-agent-panel input, .wb-agent-panel textarea, .wb-agent-panel select { font: inherit; }
+.wb-agent-panel :is(button, input, textarea, select, summary):focus-visible { outline: 2px solid #a27849; outline-offset: 3px; }
+html[data-dj-prototype="true"] .wb-agent-heading { flex-shrink: 0; margin: 0 28px; padding: 25px 0 20px; }
+html[data-dj-prototype="true"] .wb-agent-heading h2 { margin-top: 9px; }
+.wb-agent-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 8px; }
+.wb-agent-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; border: 1px solid #aaa59a; padding: 7px 11px; color: #080a08; background: transparent; font-size: 11px !important; white-space: nowrap; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
+.wb-agent-button:hover { background: #ddd8cc; border-color: #827b6d; }
+.wb-agent-primary { background: #080a08; border-color: #080a08; color: #f4f1e9; }
+.wb-agent-primary:hover { background: #34362e; border-color: #34362e; color: #fff; }
+.wb-agent-body { flex: 1; display: grid; grid-template-columns: 205px minmax(0, 1fr); min-height: 0; margin: 0 28px; }
+.wb-agent-body[data-sidebar="false"] { grid-template-columns: minmax(0, 1fr); }
+.wb-agent-sidebar { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #c8c2b7; padding: 20px 15px 0 0; }
+.wb-agent-sidebar[hidden] { display: none; }
+.wb-agent-sidebar-top { display: flex; flex-direction: column; gap: 12px; }
+.wb-agent-sidebar-top > span, .wb-agent-eyebrow { color: #77756d; font-size: 9px; letter-spacing: .13em; }
+.wb-agent-sidebar-top > button { justify-content: flex-start; min-height: 37px; }
+.wb-agent-session-list { flex: 1; min-height: 0; overflow: auto; margin-top: 15px; scrollbar-width: thin; }
+.wb-agent-session { position: relative; margin-bottom: 5px; border-left: 2px solid transparent; background: transparent; }
+.wb-agent-session[data-active="true"] { border-color: #a27849; background: #ddd8cc99; }
+.wb-agent-session:hover { background: #ddd8cc66; }
+.wb-agent-session-open { display: block; width: 100%; min-height: 69px; padding: 11px 37px 11px 9px; text-align: left; }
+.wb-agent-session-open strong { display: block; overflow: hidden; color: #34352f; font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.wb-agent-session-open small { display: block; margin-top: 7px; color: #77756d; font-size: 9px; }
+.wb-agent-session-actions { position: absolute; top: 7px; right: 3px; display: grid; gap: 2px; opacity: 0; }
+.wb-agent-session:hover .wb-agent-session-actions, .wb-agent-session:focus-within .wb-agent-session-actions { opacity: 1; }
+.wb-agent-session-actions button { width: 25px; height: 25px; color: #77756d; font-size: 14px; }
+.wb-agent-session-actions button:hover { color: #080a08; background: #c4beb2; }
+.wb-agent-session-edit { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 8px 10px; font-size: 10px; }
+.wb-agent-session-edit input, .wb-agent-session-edit > span { width: 100%; min-width: 0; }
+.wb-agent-session-edit input { min-height: 30px; border: 1px solid #aaa59a; padding: 5px; background: #f4f1e9; }
+.wb-agent-session-edit button { border: 1px solid #aaa59a; padding: 4px 8px; }
+.wb-agent-local { flex-shrink: 0; border-top: 1px solid #c8c2b7; margin: 12px 0 0; padding: 14px 0; color: #77756d; font-size: 9px; line-height: 1.6; }
+.wb-agent-conversation { display: flex; flex-direction: column; min-width: 0; min-height: 0; padding-left: 24px; }
+.wb-agent-body[data-sidebar="false"] .wb-agent-conversation { padding-left: 0; }
+.wb-agent-conversation-heading { display: flex; justify-content: space-between; gap: 12px; flex-shrink: 0; border-bottom: 1px solid #d1ccc2; padding: 17px 0 12px; color: #77756d; font-size: 10px; }
+.wb-agent-conversation-heading > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-agent-conversation-heading small { flex-shrink: 0; font-size: 8px; letter-spacing: .1em; }
+.wb-agent-messages { flex: 1; min-height: 0; overflow: auto; padding: 0 7px 14px 0; scrollbar-width: thin; overscroll-behavior: contain; }
+.wb-agent-welcome { padding: 23px 0 8px; }
+.wb-agent-welcome h3 { margin: 11px 0 9px; font-size: clamp(20px, 1.65vw, 28px); font-weight: 400; letter-spacing: -.035em; }
+.wb-agent-welcome > p { margin: 0; color: #77756d; font-size: 11px; line-height: 1.8; }
+.wb-agent-setup { margin: 18px 0; border-block: 1px solid #c8c2b7; }
+.wb-agent-setup summary, .wb-agent-trace summary { padding: 11px 0; color: #5f5a50; cursor: pointer; font-size: 10px; }
+.wb-agent-setup summary > span, .wb-agent-trace summary > span { float: right; color: #948876; font-size: 9px; }
+.wb-agent-setup > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid #d1ccc2; }
+.wb-agent-setup p { margin: 0; }
+.wb-agent-setup strong, .wb-agent-setup small { display: block; }
+.wb-agent-setup strong { font-size: 11px; font-weight: 500; }
+.wb-agent-setup small { margin-top: 5px; color: #77756d; font-size: 9px; }
+.wb-agent-prompts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.wb-agent-prompts button { position: relative; min-height: 88px; border: 1px solid #c8c2b7; padding: 12px 25px 12px 12px; text-align: left; transition: border-color 160ms ease, background-color 160ms ease; }
+.wb-agent-prompts button:last-child { grid-column: 1 / -1; }
+.wb-agent-prompts button:hover { border-color: #a27849; background: #e0dbd088; }
+.wb-agent-prompts button > span { display: block; color: #a27849; font-size: 9px; }
+.wb-agent-prompts strong { display: block; margin: 6px 0 5px; font-size: 12px; font-weight: 500; }
+.wb-agent-prompts small { display: block; color: #77756d; font-size: 9px; line-height: 1.5; }
+.wb-agent-prompts i { position: absolute; right: 12px; top: 12px; color: #827b6d; font-size: 12px; font-style: normal; }
+.wb-agent-composer { position: relative; flex-shrink: 0; border-top: 1px solid #999181; padding: 12px 0 15px; }
+.wb-agent-input-label { color: #77756d; font-size: 8px; letter-spacing: .12em; }
+.wb-agent-composer textarea { display: block; width: 100%; min-height: 55px; max-height: 160px; resize: vertical; border: 0; padding: 9px 0 5px; outline: none; background: transparent; color: #080a08; font-size: 12px; line-height: 1.7; }
+.wb-agent-composer-controls { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.wb-agent-model { position: relative; min-width: 0; }
+.wb-agent-model > summary { overflow: hidden; padding: 9px 0; color: #5f5a50; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; list-style: none; cursor: pointer; }
+.wb-agent-model > summary::-webkit-details-marker { display: none; }
+.wb-agent-model-popover { position: absolute; z-index: 5; bottom: calc(100% + 8px); left: 0; width: 250px; border: 1px solid #aaa59a; padding: 15px; background: #ece9e1; box-shadow: 0 12px 32px #080a0822; }
+.wb-agent-model-popover label { display: grid; gap: 7px; margin-bottom: 12px; color: #77756d; font-size: 10px; }
+.wb-agent-model-popover select { width: 100%; min-height: 32px; border: 1px solid #bcb7aa; padding: 0 7px; background: transparent; color: #080a08; font-size: 11px; }
+.wb-agent-send { min-width: 76px; }
+.wb-agent-composer-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px; margin-top: 10px; color: #8a8578; font-size: 8px; }
+.wb-agent-message { padding: 20px 0; border-bottom: 1px solid #d1ccc2; }
+.wb-agent-message-label { color: #a27849; font-size: 9px; letter-spacing: .1em; }
+.wb-agent-message[data-role="user"] .wb-agent-message-label { color: #77756d; }
+.wb-agent-message > p { margin: 10px 0 0; color: #34352f; font-size: 12px; line-height: 1.9; overflow-wrap: anywhere; white-space: pre-wrap; }
+.wb-agent-message[data-role="user"] > p { border-left: 2px solid #bbb3a2; padding-left: 12px; }
+.wb-agent-trace { margin: 14px 0; border-block: 1px solid #c8c2b7; }
+.wb-agent-trace > p { margin: 0 0 8px; color: #5f5a50; font-size: 10px; line-height: 1.8; }
+.wb-agent-trace > small { display: block; margin-bottom: 12px; color: #77756d; font-size: 9px; }
+.wb-agent-playlist-preview { margin-top: 15px; border: 1px solid #bcb7aa; padding: 13px; }
+.wb-agent-playlist-preview header { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-bottom: 12px; }
+.wb-agent-playlist-preview header strong, .wb-agent-playlist-preview header small { display: block; }
+.wb-agent-playlist-preview header small { color: #77756d; font-size: 8px; letter-spacing: .1em; }
+.wb-agent-playlist-preview header strong { margin-top: 6px; font-size: 14px; font-weight: 500; }
+.wb-agent-track { display: flex; align-items: center; gap: 10px; border-top: 1px solid #d1ccc2; padding: 9px 0; }
+.wb-agent-track > span { color: #77756d; font-size: 9px; }
+.wb-agent-track img { width: 35px; height: 35px; object-fit: cover; }
+.wb-agent-track p { flex: 1; min-width: 0; margin: 0; }
+.wb-agent-track strong, .wb-agent-track small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-agent-track strong { font-size: 11px; font-weight: 500; }
+.wb-agent-track small { margin-top: 4px; color: #77756d; font-size: 9px; }
+.wb-agent-open-playlists { width: 100%; border-top: 1px solid #bcb7aa; padding: 11px 0 0; text-align: left; font-size: 10px; }
+.wb-agent-open-playlists > span { float: right; }
+.wb-agent-camelot { border-left: 2px solid #a27849; padding: 7px 15px; }
+.wb-agent-camelot > span { color: #77756d; font-size: 9px; }
+.wb-agent-camelot > strong { display: block; margin: 10px 0; font-size: 24px; font-weight: 400; }
+.wb-agent-camelot i { margin: 0 10px; color: #a27849; font-style: normal; }
+.wb-agent-camelot p { color: #77756d; font-size: 10px; line-height: 1.7; }
+.wb-agent-running { padding: 18px 0; color: #a27849; font-size: 11px; }
+.wb-agent-running i { display: inline-block; width: 6px; height: 6px; margin-right: 8px; background: #a27849; animation: agent-pulse 900ms ease-in-out infinite alternate; }
+.wb-agent-running small { display: block; margin: 7px 0 0 14px; color: #77756d; font-size: 9px; }
+.wb-agent-notice { flex-shrink: 0; margin: 8px 0; border-left: 2px solid #a27849; padding: 6px 10px; color: #77756d; font-size: 10px; line-height: 1.7; }
+.wb-agent-settings { min-height: 0; overflow: auto; width: 100%; max-width: 620px; margin: 0 auto; padding: 25px 28px; scrollbar-width: thin; }
+.wb-agent-settings > label { display: block; margin-top: 22px; color: #5f5a50; font-size: 11px; }
+.wb-agent-settings input { display: block; width: 100%; min-height: 39px; margin-top: 9px; border: 1px solid #aaa59a; padding: 9px 10px; color: #080a08; background: transparent; font-size: 12px; }
+.wb-agent-settings input:disabled { opacity: .6; }
+.wb-agent-settings input[type="range"] { min-height: 15px; padding: 0; border: 0; accent-color: #a27849; }
+.wb-agent-settings output { float: right; color: #a27849; }
+.wb-agent-settings-note { margin: 22px 0; color: #77756d; font-size: 10px; line-height: 1.7; }
+.wb-agent-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid #aaa59a; padding-top: 17px; }
+.wb-agent-settings-actions > span { flex: 1; }
+@keyframes agent-pulse { to { opacity: .25; } }
+#stage.reduce-motion .wb-agent-running i { animation: none; }
+@media (prefers-reduced-motion: reduce) { .wb-agent-running i { animation: none; } }
+@media (max-width: 1100px) {
+  .wb-agent-body { grid-template-columns: 165px minmax(0, 1fr); margin-inline: 20px; }
+  html[data-dj-prototype="true"] .wb-agent-heading { margin-inline: 20px; }
+  .wb-agent-conversation { padding-left: 15px; }
+  .wb-agent-header-actions { gap: 5px; }
+  .wb-agent-header-actions .wb-agent-button { padding-inline: 8px; }
+  .wb-agent-prompts { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 700px) {
+  html[data-dj-prototype="true"] .wb-agent-heading { gap: 10px; padding: 14px 0; margin-inline: 18px; }
+  html[data-dj-prototype="true"] .wb-agent-heading h2 { font-size: 22px; }
+  html[data-dj-prototype="true"] .wb-agent-heading p { font-size: 9px; line-height: 1.6; }
+  .wb-agent-header-actions { flex-wrap: wrap; justify-content: flex-end; max-width: 125px; }
+  .wb-agent-header-actions .wb-playlist-close { width: 32px; height: 32px; }
+  .wb-agent-body { position: relative; display: flex; margin-inline: 18px; }
+  .wb-agent-sidebar { position: absolute; inset: 0 auto 0 0; z-index: 4; width: min(240px, 85%); padding-right: 15px; background: #e9e5dc; box-shadow: 12px 0 20px #080a0814; }
+  .wb-agent-conversation { flex: 1; padding-left: 0; }
+  .wb-agent-composer { padding: 8px 0; }
+  .wb-agent-composer textarea { height: 60px; min-height: 60px; resize: none; font-size: 16px; }
+  .wb-agent-model-popover { max-width: calc(100vw - 55px); }
+  .wb-agent-playlist-preview header { flex-wrap: wrap; }
+}
+@media (hover: none) { .wb-agent-session-actions { opacity: 1; } }
