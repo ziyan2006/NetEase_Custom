@@ -3,7 +3,7 @@ import { rollText, patchRollingPanel } from "./workbench-rolling";
 import { workbenchLettering } from "./workbench-lettering";
 import { escapeHtml } from "./html";
 import { isDjPrototype, wallpaperHost, type WallpaperProperties } from "./wallpaper";
-import { djDemoTracks, djPlaceholderCover, djPreview, setDjPreview } from "./dj-records";
+import { NeteaseApiError, yesmusicApi, type NeteasePlaylist, type NeteaseTrack } from "./yesmusic-api";
 import { DjAgentPanel } from "./dj-agent";
 import { dayKey, durationText, idleTimer, parseTarget, restoreTimer, timerLeft } from "./workbench-state";
 import "./workbench.css";
@@ -18,17 +18,26 @@ const names = isDjPrototype
   : ["时间日期", "今日事项", "重要日程", "正在播放", "专注计时"];
 const capabilityKeys = ["enabletime", "enabletasks", "enableevent", "enablemedia", "enablefocus"];
 const key = isDjPrototype ? "yesmusic-dj-prototype-v1" : "rhine-workbench-v1";
-const djPlaylists = [
-  { code: "YM–001", name: "Peak Hour Reference", count: 24, note: "峰值时段 / 示例歌单", cover: djPlaceholderCover, tracks: [0, 1, 2] },
-  { code: "YM–002", name: "Warm-up Library", count: 32, note: "暖场曲库 / 示例歌单", cover: djPlaceholderCover, tracks: [2, 0, 1] },
-  { code: "YM–003", name: "Melodic Techno Sketch", count: 18, note: "旋律 Techno / 示例歌单", cover: djPlaceholderCover, tracks: [1, 2, 0] },
-];
 export class Workbench {
   enabled = false;
   private root: HTMLElement;
   private agentPanel?: DjAgentPanel;
   private props: WallpaperProperties = {};
   private lane = 0;
+  private selectedPlaylistId = "";
+  private playlists: NeteasePlaylist[] = [];
+  private playlistDetail: NeteasePlaylist | null = null;
+  private playlistsLoading = false;
+  private playlistDetailLoading = false;
+  private playlistError = "";
+  private playlistCreateOpen = false;
+  private deleteConfirmId = "";
+  private pendingTrack: NeteaseTrack | null = null;
+  private targetPlaylistId = "";
+  private mutationBusy = false;
+  private accountUserId = "";
+  private playlistsRequestId = 0;
+  private detailRequestId = 0;
   private selectedPlaylist = 0;
   private searchQuery = "";
   private outputRoot = "D:\\DJ_Music_Library";
@@ -45,7 +54,6 @@ export class Workbench {
   private playlistSearchQuery = "";
   private playlistDrawerNotice = "";
   private playlistExportConfirm = false;
-  private completedPlaylistExports = new Set<string>();
   private onlineSearchQuery = "";
   private onlineSearchSubmitted = false;
   private onlineSearchNotice = "";
@@ -67,7 +75,7 @@ export class Workbench {
     } catch { this.storageOK = false; }
     stage.insertAdjacentHTML("beforeend", `<section class="workbench" hidden aria-label="桌面工作台">
       <div class="wb-overview"><div class="wb-time"><div class="wb-kicker">${isDjPrototype ? "YESMUSIC / DJ TERMINAL" : workbenchLettering('daily')}</div><time class="wb-clock"></time><time class="wb-date"><span class="wb-date-numbers" aria-hidden="true"><span class="wb-date-year"></span><span class="wb-date-dot">.</span><span class="wb-date-monthday"></span></span><span class="wb-date-weekday" aria-hidden="true"></span></time></div>
-      <section class="wb-today"><div class="wb-heading"><h2>${isDjPrototype ? "演出待办" : "今日事项"}</h2><span class="wb-task-count"></span></div><div class="wb-tasks"></div></section></div>
+      ${isDjPrototype ? "" : '<section class="wb-today"><div class="wb-heading"><h2>今日事项</h2><span class="wb-task-count"></span></div><div class="wb-tasks"></div></section>'}</div>
       <section class="wb-module"><div class="wb-kicker">${isDjPrototype ? "DJ WORKSPACE" : workbenchLettering('workspace')} <span class="wb-index">01 / ${isDjPrototype ? "04" : "05"}</span></div><h2 class="wb-title"></h2><div class="wb-content"></div><p class="wb-storage" role="status"></p></section>
       ${isDjPrototype ? '<section class="wb-dj-player" aria-label="试听播放器"></section>' : ""}
       ${isDjPrototype ? '<button class="wb-playlist-dismiss-zone" aria-label="关闭功能面板" title="点击灰色遮罩左侧的空白处收起" hidden></button><div class="wb-playlist-scrim" aria-hidden="true" hidden></div><aside class="wb-playlist-drawer" id="dj-playlist-drawer" role="dialog" aria-modal="false" aria-labelledby="dj-playlist-title" hidden></aside>' : ""}
@@ -78,11 +86,11 @@ export class Workbench {
       openSearch: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search"),
       openPlaylists: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist"),
       openAccount: () => document.querySelector<HTMLButtonElement>(".dj-account-button")?.click(),
-      playSample: index => this.playPlaylistTrack(0, index),
+      playSample: () => { this.playerNotice = "播放器将在后续阶段接入。"; this.renderDjPlayer(); },
     });
     bindStaticTranslations(this.root);
     window.addEventListener(localeEvent, () => {
-      const task = (document.activeElement as HTMLElement)?.dataset.wbTask;
+        const task = (document.activeElement as HTMLElement)?.dataset.wbTask;
       this.lastSecond = -1;
       this.renderTasks(); this.renderPanel(); this.tick();
       if (task !== undefined) this.root.querySelector<HTMLElement>(`[data-wb-task="${task}"]`)?.focus({ preventScroll: true });
@@ -90,7 +98,7 @@ export class Workbench {
     this.root.addEventListener("click", event => {
       const button = (event.target as Element).closest<HTMLButtonElement>("button");
       if (!button) return;
-      if (isDjPrototype && button.dataset.djAction) { this.djAction(button); return; }
+      if (isDjPrototype && button.dataset.djAction) { void this.djAction(button); return; }
       if (button.dataset.wbLane !== undefined) {
         const lane = +button.dataset.wbLane;
         if (isDjPrototype && lane >= 0 && lane <= 2) {
@@ -120,6 +128,7 @@ export class Workbench {
       const target = event.target;
       if (target instanceof HTMLSelectElement && target.id === "dj-player-playlist") this.playerPlaylistIndex = Number(target.value) || 0;
       if (target instanceof HTMLSelectElement && target.id === "dj-online-playlist") this.playerPlaylistIndex = Number(target.value) || 0;
+      if (target instanceof HTMLSelectElement && target.id === "dj-playlist-target") this.targetPlaylistId = target.value;
     });
     if (isDjPrototype) this.root.addEventListener("input", event => {
       const target = event.target;
@@ -133,8 +142,21 @@ export class Workbench {
         this.renderPlaylistCards();
       }
     });
+    if (isDjPrototype) window.addEventListener("yesmusic-account-updated", event => {
+      const detail = (event as CustomEvent<{ authenticated: boolean; userId?: string }>).detail;
+      this.accountUserId = detail?.authenticated ? String(detail.userId ?? "") : "";
+      if (!this.accountUserId) {
+        this.playlists = [];
+        this.playlistDetail = null;
+        this.selectedPlaylistId = "";
+        this.playlistDetailOpen = false;
+      }
+      if (this.rightDrawerMode === "playlist") void this.refreshPlaylists();
+      this.renderRightDrawer();
+      this.renderDjPanel();
+    });
     if (isDjPrototype) this.root.addEventListener("keydown", event => {
-      if (this.playlistExportConfirm && event.key === "Tab") {
+      if ((this.pendingTrack || this.deleteConfirmId) && event.key === "Tab") {
         const actions = this.root.querySelectorAll<HTMLButtonElement>(".wb-playlist-export-confirm button");
         const first = actions[0], last = actions[actions.length - 1];
         if (event.shiftKey && document.activeElement === first) {
@@ -146,11 +168,12 @@ export class Workbench {
         }
         return;
       }
-      if (this.playlistExportConfirm && event.key === "Escape") {
+      if ((this.pendingTrack || this.deleteConfirmId) && event.key === "Escape") {
         event.preventDefault();
-        this.playlistExportConfirm = false;
+        this.pendingTrack = null;
+        this.deleteConfirmId = "";
         this.renderRightDrawer();
-        requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']")?.focus({ preventScroll: true }));
+        requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-track-add']")?.focus({ preventScroll: true }));
         return;
       }
       if (event.key === "Escape" && this.rightDrawerOpen) {
@@ -170,7 +193,6 @@ export class Workbench {
     window.addEventListener("rhine-wallpaper-properties", event => this.apply((event as CustomEvent<WallpaperProperties>).detail));
     window.addEventListener("rhine-wallpaper-media", () => {
       if (isDjPrototype) {
-        this.syncDjPreview();
         this.renderDjPlayer();
       } else if (this.lane === 3) this.renderPanel();
     });
@@ -208,21 +230,6 @@ export class Workbench {
     this.syncVisibility();
     this.syncElements();
   }
-  completePlaylistExport(name: string) {
-    const playlist = djPlaylists.find(item => item.name === name);
-    if (!playlist) return;
-    this.completedPlaylistExports.add(playlist.code);
-    this.renderRightDrawer();
-    const showingPlaylist = this.rightDrawerOpen
-      && this.rightDrawerMode === "playlist"
-      && this.playlistDetailOpen
-      && djPlaylists[this.selectedPlaylist]?.code === playlist.code;
-    if (showingPlaylist) this.stage.dataset.playlistExportComplete = "true";
-    else {
-      delete this.stage.dataset.playlistExporting;
-      delete this.stage.dataset.playlistExportComplete;
-    }
-  }
   syncVisibility() {
     const hidden = !this.enabled || this.stage.dataset.mode === "boot";
     if (hidden && this.rightDrawerOpen) this.closeRightDrawer(false);
@@ -245,8 +252,9 @@ export class Workbench {
     this.root.hidden = hidden;
     if (interrupted && !hidden && !reduced) this.root.animate([{ opacity }, { opacity: 1 }], { duration: 220, easing: "ease-out" });
     if (entering) {
-      [".wb-time", ".wb-today", ".wb-module", ...(isDjPrototype ? [".wb-dj-player"] : []), ".wb-nav"].forEach((selector, i) => {
-        const element = this.root.querySelector<HTMLElement>(selector)!;
+      [".wb-time", ...(!isDjPrototype ? [".wb-today"] : []), ".wb-module", ...(isDjPrototype ? [".wb-dj-player"] : []), ".wb-nav"].forEach((selector, i) => {
+        const element = this.root.querySelector<HTMLElement>(selector);
+        if (!element) return;
         element.getAnimations().forEach(a => a.cancel());
         if (!reduced) element.animate([{ opacity: 0, translate: "0 9px" }, { opacity: 1, translate: "0 0" }],
           { duration: 460, delay: 60 + i * 65, easing: "cubic-bezier(.22,.7,.2,1)", fill: "backwards" });
@@ -262,12 +270,15 @@ export class Workbench {
   }
   private syncElements() {
     const selectors = { clock: ".wb-time", tasks: ".wb-today", module: ".wb-module", navigation: ".wb-nav" } as const;
-    for (const [key, selector] of Object.entries(selectors)) this.root.querySelector<HTMLElement>(selector)!.hidden = !this.visibility[key as WorkbenchElement];
+    for (const [key, selector] of Object.entries(selectors)) {
+      const element = this.root.querySelector<HTMLElement>(selector);
+      if (element) element.hidden = !this.visibility[key as WorkbenchElement];
+    }
     const available = capabilityKeys.some((_, i) => this.laneEnabled(i));
     this.root.querySelector<HTMLElement>(".wb-module")!.hidden = !this.visibility.module || !available;
     this.root.querySelector<HTMLElement>(".wb-nav")!.hidden = !this.visibility.navigation || !available;
     this.root.querySelectorAll<HTMLButtonElement>("[data-wb-lane]").forEach(button => { button.hidden = !this.laneEnabled(+button.dataset.wbLane!); });
-    this.root.querySelector<HTMLElement>(".wb-overview")!.hidden = !this.visibility.clock && !this.visibility.tasks;
+    this.root.querySelector<HTMLElement>(".wb-overview")!.hidden = !this.visibility.clock && (!this.visibility.tasks || isDjPrototype);
     this.root.dataset.clockVisible = String(this.visibility.clock);
     this.stage.dataset.workbenchBrand = String(!this.enabled || this.visibility.brand);
     this.stage.dataset.workbenchFooter = String(!this.enabled || this.visibility.footer);
@@ -282,6 +293,7 @@ export class Workbench {
     if (this.date !== today) { this.date = today; this.done = []; this.save(); this.renderTasks(); }
   }
   private renderTasks() {
+    if (isDjPrototype || !this.root.querySelector(".wb-today")) return;
     const entries = [0, 1, 2].filter(i => this.text(`task${i + 1}`));
     this.root.querySelector(".wb-task-count")!.textContent = entries.length ? `${entries.filter(i => this.done.includes(this.taskId(i))).length} / ${entries.length}` : "";
     this.root.querySelector(".wb-tasks")!.innerHTML = entries.length ? entries.map(i => `<button class="wb-task" data-wb-task="${i}" aria-pressed="${this.done.includes(this.taskId(i))}"><span class="wb-check" aria-hidden="true">${this.done.includes(this.taskId(i)) ? "✓" : ""}</span><span>${escapeHtml(this.text(`task${i + 1}`))}</span></button>`).join("") : tr('<p class="wb-muted">今天想完成什么？<br>在 Wallpaper Engine 属性中填写最多三件事。</p>');
@@ -308,7 +320,7 @@ export class Workbench {
     this.rightDrawerOpen = true;
     this.rightDrawerMode = mode;
     if (!alreadyOpen || modeChanged) this.playlistDetailOpen = false;
-    if (!alreadyOpen || modeChanged) this.playlistExportConfirm = false;
+    if (!alreadyOpen || modeChanged) this.pendingTrack = null;
     if (modeChanged) this.pendingOnlineTrackIndex = null;
     if (mode === "playlist") this.playlistDrawerNotice = "";
     else if (mode === "search") this.onlineSearchNotice = "";
@@ -325,6 +337,7 @@ export class Workbench {
     this.root.querySelectorAll<HTMLButtonElement>('.wb-nav [aria-controls="dj-playlist-drawer"]').forEach(button => button.setAttribute("aria-expanded", String(Number(button.dataset.wbLane) === drawerLanes[mode])));
     this.root.querySelectorAll<HTMLButtonElement>("[data-wb-lane]").forEach(button => button.setAttribute("aria-pressed", String(Number(button.dataset.wbLane) === drawerLanes[mode])));
     this.renderRightDrawer();
+    if (mode === "playlist" && this.accountUserId && !this.playlists.length && !this.playlistsLoading) void this.refreshPlaylists();
     if (!alreadyOpen && !this.stage.classList.contains("reduce-motion")) {
       drawer.getAnimations().forEach(animation => animation.cancel());
       drawer.animate([{ opacity: 0, transform: "translateX(100%)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 380, easing: "cubic-bezier(.22,.7,.2,1)" });
@@ -365,6 +378,81 @@ export class Workbench {
     this.renderPanel();
     if (restoreFocus) this.playlistReturnFocus?.focus({ preventScroll: true });
   }
+  private async refreshPlaylists() {
+    if (!this.accountUserId) {
+      this.playlists = [];
+      this.playlistDetail = null;
+      this.playlistError = "请先登录网易云账号以读取云端歌单。";
+      this.playlistsLoading = false;
+      this.renderRightDrawer();
+      return;
+    }
+    const requestId = ++this.playlistsRequestId;
+    this.playlistsLoading = true;
+    this.playlistError = "";
+    this.renderRightDrawer();
+    try {
+      const result = await yesmusicApi.getPlaylists();
+      if (requestId !== this.playlistsRequestId) return;
+      this.accountUserId = result.userId || this.accountUserId;
+      this.playlists = result.playlists;
+      if (!this.playlists.some(item => item.id === this.selectedPlaylistId)) this.selectedPlaylistId = this.playlists[0]?.id ?? "";
+      if (this.playlistDetailOpen && this.selectedPlaylistId) await this.loadPlaylistDetail(this.selectedPlaylistId);
+    } catch (error) {
+      if (requestId !== this.playlistsRequestId) return;
+      this.playlistError = error instanceof Error ? error.message : "歌单读取失败，请重试。";
+      if (error instanceof NeteaseApiError && error.status === 401) {
+        window.dispatchEvent(new CustomEvent("yesmusic-auth-invalid", { detail: { message: this.playlistError } }));
+      }
+    } finally {
+      if (requestId === this.playlistsRequestId) {
+        this.playlistsLoading = false;
+        this.renderRightDrawer();
+        this.renderDjPanel();
+      }
+    }
+  }
+  private async loadPlaylistDetail(id: string) {
+    if (!id) return;
+    const requestId = ++this.detailRequestId;
+    this.selectedPlaylistId = id;
+    this.playlistDetail = null;
+    this.playlistDetailLoading = true;
+    this.playlistError = "";
+    this.renderRightDrawer();
+    try {
+      const playlist = await yesmusicApi.getPlaylistDetail(id);
+      if (requestId !== this.detailRequestId || id !== this.selectedPlaylistId) return;
+      this.playlistDetail = playlist;
+    } catch (error) {
+      if (requestId !== this.detailRequestId) return;
+      this.playlistError = error instanceof Error ? error.message : "歌单详情读取失败，请重试。";
+      if (error instanceof NeteaseApiError && error.status === 401) {
+        window.dispatchEvent(new CustomEvent("yesmusic-auth-invalid", { detail: { message: this.playlistError } }));
+      }
+    } finally {
+      if (requestId === this.detailRequestId) {
+        this.playlistDetailLoading = false;
+        this.renderRightDrawer();
+      }
+    }
+  }
+  private async mutatePlaylist(op: "add" | "del", playlistId: string, trackId: string, trackName: string) {
+    if (this.mutationBusy) return;
+    this.mutationBusy = true;
+    this.playlistDrawerNotice = op === "add" ? "正在将曲目加入歌单…" : "正在从歌单移除曲目…";
+    this.renderRightDrawer();
+    try {
+      await yesmusicApi.updatePlaylistTracks(op, playlistId, [trackId]);
+      this.playlistDrawerNotice = op === "add" ? `已将「${trackName}」加入歌单。` : `已从歌单移除「${trackName}」。`;
+      await this.refreshPlaylists();
+    } catch (error) {
+      this.playlistDrawerNotice = error instanceof Error ? error.message : "歌单修改失败，请重试。";
+    } finally {
+      this.mutationBusy = false;
+      this.renderRightDrawer();
+    }
+  }
   private renderRightDrawer() {
     if (!this.rightDrawerOpen) return;
     const drawer = this.root.querySelector<HTMLElement>(".wb-playlist-drawer")!;
@@ -378,8 +466,16 @@ export class Workbench {
       this.renderOnlineSearchDrawer(drawer);
       return;
     }
-    const playlist = djPlaylists[this.selectedPlaylist] ?? djPlaylists[0];
     if (!this.playlistDetailOpen) {
+      const listContent = !this.accountUserId
+        ? `<div class="wb-playlist-empty"><strong>网易云账号未登录</strong><small>登录并验证账号后，这里会显示真实云端歌单。</small><button data-dj-action="account-open">前往登录</button></div>`
+        : this.playlistsLoading
+          ? `<div class="wb-playlist-empty" role="status">正在读取云端歌单…</div>`
+          : this.playlistError
+            ? `<div class="wb-playlist-empty" role="alert"><strong>歌单读取失败</strong><small>${escapeHtml(this.playlistError)}</small><button data-dj-action="playlist-refresh">重试</button></div>`
+            : !this.playlists.length
+              ? `<div class="wb-playlist-empty"><strong>账号中没有云端歌单</strong><small>新建一个歌单后即可开始管理。</small></div>`
+              : `<div class="wb-playlist-grid" id="dj-playlist-cards"></div>`;
       drawer.innerHTML = `
         <header class="wb-playlist-heading">
           <div><span>NETEASE CLOUD / PLAYLIST INDEX</span><h2 id="dj-playlist-title">云端歌单</h2><p>浏览歌单、查看曲目与导出设置</p></div>
@@ -390,16 +486,23 @@ export class Workbench {
           <button data-dj-action="playlist-refresh" title="刷新歌单">↻<span>刷新</span></button>
           <button class="wb-playlist-create" data-dj-action="playlist-create">＋ 新建</button>
         </div>
-        <div class="wb-playlist-list-heading"><span>PLAYLIST COLLECTION</span><span>${String(djPlaylists.length).padStart(2, "0")} / SAMPLE</span></div>
-        <div class="wb-playlist-grid" id="dj-playlist-cards"></div>
-        ${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}`;
+        <div class="wb-playlist-list-heading"><span>PLAYLIST COLLECTION</span><span>${this.accountUserId ? `${String(this.playlists.length).padStart(2, "0")} / CLOUD` : "ACCOUNT REQUIRED"}</span></div>
+        ${listContent}
+        ${this.playlistCreateOpen ? `<form class="wb-playlist-create-form"><label for="dj-playlist-name">新歌单名称</label><input id="dj-playlist-name" maxlength="36" autocomplete="off" placeholder="输入歌单名称"/><div><button type="button" data-dj-action="playlist-create-cancel">取消</button><button type="button" data-dj-action="playlist-create-confirm" ${this.mutationBusy ? "disabled" : ""}>创建歌单</button></div></form>` : ""}
+        ${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}
+        ${this.deleteConfirmId ? `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / DELETE</span><h3 id="playlist-delete-title">删除这份歌单？</h3><strong>${escapeHtml(this.playlists.find(item => item.id === this.deleteConfirmId)?.name ?? "")}</strong><p>删除会直接修改网易云账号中的歌单。</p><div><button data-dj-action="playlist-delete-cancel">取消</button><button data-dj-action="playlist-delete-confirm" ${this.mutationBusy ? "disabled" : ""}>确认删除</button></div></section></div>` : ""}`;
       this.renderPlaylistCards();
       return;
     }
-    const trackRows = playlist.tracks.map((trackIndex, rowIndex) => {
-      const track = djDemoTracks[trackIndex];
-      return `<div class="wb-playlist-track-row"><span class="wb-playlist-track-no">${String(rowIndex + 1).padStart(2, "0")}</span><div class="wb-playlist-track-copy"><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)} · 匹配状态待接入</small></div><time>—:——</time><div class="wb-playlist-track-actions"><button data-dj-action="playlist-track-play" data-track-index="${trackIndex}" aria-label="试听 ${escapeHtml(track.title)}">▶</button><button data-dj-action="playlist-track-add" data-track-index="${trackIndex}" aria-label="将 ${escapeHtml(track.title)} 加入其他歌单">＋</button><button data-dj-action="playlist-track-remove" data-track-index="${trackIndex}" aria-label="从歌单移除 ${escapeHtml(track.title)}">−</button></div></div>`;
-    }).join("");
+    const playlist = this.playlistDetail ?? this.playlists.find(item => item.id === this.selectedPlaylistId);
+    if (!playlist) {
+      drawer.innerHTML = `<header class="wb-playlist-detail-heading"><button class="wb-playlist-back" data-dj-action="playlist-back">← <span>返回歌单列表</span></button><button class="wb-playlist-close" data-dj-action="drawer-close" aria-label="关闭歌单面板">×</button></header><div class="wb-playlist-empty">${this.playlistDetailLoading ? "正在读取歌单详情…" : escapeHtml(this.playlistError || "选择一个歌单以查看详情。")}${this.playlistError ? `<button data-dj-action="playlist-detail-refresh">重新读取</button>` : ""}</div></div>`;
+      return;
+    }
+    const tracks = playlist.tracks ?? [];
+    const trackRows = this.playlistDetailLoading
+      ? `<div class="wb-playlist-empty" role="status">正在读取曲目…</div>`
+      : tracks.map((track, rowIndex) => `<div class="wb-playlist-track-row"><span class="wb-playlist-track-no">${String(rowIndex + 1).padStart(2, "0")}</span><div class="wb-playlist-track-copy"><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artists.join(" / ") || "未知艺人")} · ${escapeHtml(track.album)}</small></div><time>${track.durationMs ? durationText(track.durationMs) : "—:——"}</time><div class="wb-playlist-track-actions"><button disabled title="播放器将在下一阶段接入" aria-label="播放功能正在接入">▶</button><button data-dj-action="playlist-track-add" data-track-id="${escapeHtml(track.id)}" aria-label="将 ${escapeHtml(track.title)} 加入其他歌单">＋</button><button data-dj-action="playlist-track-remove" data-track-id="${escapeHtml(track.id)}" data-track-name="${escapeHtml(track.title)}" aria-label="从歌单移除 ${escapeHtml(track.title)}" ${this.mutationBusy ? "disabled" : ""}>−</button></div></div>`).join("") || `<div class="wb-playlist-empty">此歌单当前没有可显示的曲目。</div>`;
     drawer.innerHTML = `
       <header class="wb-playlist-detail-heading">
         <button class="wb-playlist-back" data-dj-action="playlist-back">← <span>返回歌单列表</span></button>
@@ -407,47 +510,29 @@ export class Workbench {
       </header>
       <div class="wb-playlist-detail-scroll">
         <div class="wb-playlist-detail-hero">
-          <div class="wb-playlist-detail-cover"><img src="${escapeHtml(playlist.cover)}" alt="${escapeHtml(playlist.name)} 封面"/><span>${playlist.code}</span><strong>PLAYLIST</strong></div>
-          <div class="wb-playlist-detail-meta"><span class="wb-playlist-eyebrow">SELECTED PLAYLIST / 歌单档案</span><h2 id="dj-playlist-title">${escapeHtml(playlist.name)}</h2><p>${escapeHtml(playlist.note)} · 内容为视觉示例</p><div class="wb-playlist-metrics"><span><strong>${playlist.count}</strong><small>TRACKS</small></span><span><strong>320K</strong><small>QUALITY</small></span><span><strong>MP3</strong><small>EXPORT</small></span></div><div class="wb-playlist-detail-actions"><button data-dj-action="playlist-play-all">▶ 全部播放</button><button data-dj-action="playlist-export">↓ 导出歌单</button></div></div>
+          <div class="wb-playlist-detail-cover">${playlist.coverUrl ? `<img src="${escapeHtml(playlist.coverUrl)}" alt="${escapeHtml(playlist.name)} 封面"/>` : `<span class="wb-playlist-no-cover">NO COVER</span>`}<span>${escapeHtml(`YM-${playlist.id.slice(-3).padStart(3, "0")}`)}</span><strong>PLAYLIST</strong></div>
+          <div class="wb-playlist-detail-meta"><span class="wb-playlist-eyebrow">SELECTED PLAYLIST / 歌单档案</span><h2 id="dj-playlist-title">${escapeHtml(playlist.name)}</h2><p>网易云音乐 · ${escapeHtml(this.accountUserId)}</p><div class="wb-playlist-metrics"><span><strong>${playlist.trackCount}</strong><small>TRACKS</small></span><span><strong>${tracks.length || "—"}</strong><small>LOADED</small></span><span><strong>CLOUD</strong><small>SOURCE</small></span></div><div class="wb-playlist-detail-actions"><button disabled title="播放器将在下一阶段接入">▶ 全部播放</button><button data-dj-action="playlist-export" disabled title="导出功能将在后续阶段接入">↓ 导出歌单</button></div></div>
         </div>
-        ${this.completedPlaylistExports.has(playlist.code) ? `<section class="wb-playlist-export-complete" role="status"><div><strong>EXPORT COMPLETE</strong><span>${playlist.count} / ${playlist.count} TRACKS · 100%</span></div><i><b></b></i><small>导出完成 · 封面与歌单信息已保留</small></section>` : ""}
         <div class="wb-playlist-track-heading"><span>TRACKLIST / 曲目列表</span><span>PLAY · ADD · REMOVE</span></div>
         <div class="wb-playlist-track-list">${trackRows}</div>
         ${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}
       </div>
-      ${this.playlistExportConfirm ? `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="alertdialog" aria-modal="true" aria-labelledby="playlist-export-confirm-title" aria-describedby="playlist-export-confirm-copy"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / EXPORT</span><h3 id="playlist-export-confirm-title">是否导出这份歌单？</h3><strong>${escapeHtml(playlist.name)}</strong><p id="playlist-export-confirm-copy">将导出 ${playlist.count} 首曲目。确认后会在当前档案画面展示导出进度；此原型不会写入音频文件。</p><div><button data-dj-action="playlist-export-cancel">取消</button><button data-dj-action="playlist-export-confirm">确认导出 ↗</button></div></section></div>` : ""}`;
+      ${this.pendingTrack ? `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="dialog" aria-modal="true" aria-labelledby="playlist-add-track-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / PLAYLIST</span><h3 id="playlist-add-track-title">加入目标歌单</h3><strong>${escapeHtml(this.pendingTrack.title)}</strong><label for="dj-playlist-target">选择歌单</label><select id="dj-playlist-target">${this.playlists.filter(item => item.id !== this.selectedPlaylistId).map(item => `<option value="${escapeHtml(item.id)}" ${item.id === this.targetPlaylistId ? "selected" : ""}>${escapeHtml(item.name)}</option>`).join("")}</select><div><button data-dj-action="playlist-add-cancel">取消</button><button data-dj-action="playlist-add-confirm" ${this.mutationBusy || !this.targetPlaylistId ? "disabled" : ""}>确认加入</button></div></section></div>` : ""}`;
   }
   private renderPlaylistCards() {
     const container = this.root.querySelector<HTMLElement>("#dj-playlist-cards");
     if (!container || !this.rightDrawerOpen || this.rightDrawerMode !== "playlist" || this.playlistDetailOpen) return;
-    const matching = djPlaylists.map((playlist, index) => ({ playlist, index })).filter(({ playlist }) => `${playlist.name} ${playlist.note}`.toLocaleLowerCase().includes(this.playlistSearchQuery));
-    container.innerHTML = matching.length ? matching.map(({ playlist, index }) => `
+    const matching = this.playlists.filter(playlist => playlist.name.toLocaleLowerCase().includes(this.playlistSearchQuery));
+    container.innerHTML = matching.length ? matching.map(playlist => `
       <article class="wb-playlist-card">
-        <button class="wb-playlist-card-open" data-dj-action="playlist-open" data-index="${index}" aria-label="打开歌单 ${escapeHtml(playlist.name)}">
-        <span class="wb-playlist-card-cover"><img src="${escapeHtml(playlist.cover)}" alt=""/><i>${playlist.code}</i><b>PLAYLIST</b></span>
-          <strong>${escapeHtml(playlist.name)}</strong><small>${playlist.count} 首曲目 · 示例歌单</small>
+        <button class="wb-playlist-card-open" data-dj-action="playlist-open" data-id="${escapeHtml(playlist.id)}" aria-label="打开歌单 ${escapeHtml(playlist.name)}">
+        <span class="wb-playlist-card-cover">${playlist.coverUrl ? `<img src="${escapeHtml(playlist.coverUrl)}" alt=""/>` : `<i class="wb-playlist-no-cover">NO COVER</i>`}<i>${escapeHtml(`YM-${playlist.id.slice(-3).padStart(3, "0")}`)}</i><b>PLAYLIST</b></span>
+          <strong>${escapeHtml(playlist.name)}</strong><small>${playlist.trackCount} 首曲目 · 网易云</small>
         </button>
-        <div class="wb-playlist-card-actions"><button data-dj-action="playlist-card-play" data-index="${index}" aria-label="播放歌单 ${escapeHtml(playlist.name)}" title="播放歌单">▶</button><button data-dj-action="playlist-export-card" data-index="${index}" aria-label="导出 ${escapeHtml(playlist.name)}">↓</button><button data-dj-action="playlist-delete" data-index="${index}" aria-label="删除 ${escapeHtml(playlist.name)}">×</button></div>
+        <div class="wb-playlist-card-actions"><button disabled aria-label="播放器将在后续阶段接入">▶</button><button disabled aria-label="导出将在后续阶段接入">↓</button>${playlist.ownerId && playlist.ownerId === this.accountUserId ? `<button data-dj-action="playlist-delete" data-id="${escapeHtml(playlist.id)}" aria-label="删除歌单 ${escapeHtml(playlist.name)}">×</button>` : ""}</div>
       </article>`).join("") : `<p class="wb-playlist-empty">未找到“${escapeHtml(this.playlistSearchQuery)}”对应的歌单。</p>`;
   }
   private renderOnlineSearchDrawer(drawer: HTMLElement) {
-    const query = this.onlineSearchQuery.trim().toLocaleLowerCase();
-    const matches = this.onlineSearchSubmitted && query
-      ? djDemoTracks.map((track, index) => ({ track, index })).filter(({ track }) => `${track.title} ${track.artist} ${track.album}`.toLocaleLowerCase().includes(query))
-      : [];
-    const rows = matches.map(({ track, index }, rowIndex) => `
-      <tr>
-        <td class="wb-search-number">${String(rowIndex + 1).padStart(2, "0")}</td>
-        <td><div class="wb-search-track"><img src="${escapeHtml(djPlaceholderCover)}" alt=""/><span><strong>${escapeHtml(track.title)}</strong><small>示例曲目 / DEMO RESULT</small></span></div></td>
-        <td>${escapeHtml(track.artist)}</td><td>${escapeHtml(track.album)}</td><td class="wb-search-duration">—:——</td>
-        <td><div class="wb-search-actions"><button data-dj-action="online-track-play" data-track-index="${index}" aria-label="试听 ${escapeHtml(track.title)}" title="试听">▶</button><button data-dj-action="online-track-add" data-track-index="${index}" aria-label="将 ${escapeHtml(track.title)} 加入歌单" title="加入歌单">＋</button></div></td>
-      </tr>`).join("");
-    const resultContent = !this.onlineSearchSubmitted
-      ? `<div class="wb-search-placeholder"><span>⌕</span><strong>搜索网易云曲库</strong><p>输入歌曲名、歌手名或专辑名，查看匹配结果。</p></div>`
-      : matches.length
-        ? `<div class="wb-search-table-wrap"><table class="wb-search-table"><thead><tr><th>#</th><th>歌曲</th><th>歌手</th><th>专辑</th><th>时长</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`
-        : `<div class="wb-playlist-empty">示例曲库中没有找到“${escapeHtml(this.onlineSearchQuery)}”。<small>接入原版曲库接口后，这里将显示在线搜索结果。</small></div>`;
-    const addTrack = this.pendingOnlineTrackIndex === null ? null : djDemoTracks[this.pendingOnlineTrackIndex];
     drawer.innerHTML = `
       <header class="wb-playlist-heading">
         <div><span>NETEASE MUSIC / ONLINE SEARCH</span><h2 id="dj-playlist-title">在线搜索歌曲</h2><p>按歌曲、歌手或专辑检索曲库，并试听或加入歌单</p></div>
@@ -457,9 +542,8 @@ export class Workbench {
         <label class="wb-playlist-search"><span aria-hidden="true">⌕</span><input id="dj-online-search" type="search" placeholder="歌曲名、歌手名或专辑名…" aria-label="搜索歌曲、歌手或专辑" value="${escapeHtml(this.onlineSearchQuery)}"/></label>
         <button class="wb-playlist-create" data-dj-action="online-search">⌕<span>搜索</span></button>
       </div>
-      <div class="wb-playlist-list-heading"><span>SEARCH RESULTS / 搜索结果</span><span>${this.onlineSearchSubmitted ? `${String(matches.length).padStart(2, "0")} / SAMPLE` : "等待查询"}</span></div>
-      <div class="wb-search-content">${resultContent}</div>
-      ${addTrack ? `<div class="wb-search-add-panel"><div><strong>加入歌单</strong><small>${escapeHtml(addTrack.title)}</small></div><label><span>目标歌单</span><select id="dj-online-playlist" aria-label="选择目标歌单">${djPlaylists.map((playlist, index) => `<option value="${index}" ${index === this.playerPlaylistIndex ? "selected" : ""}>${escapeHtml(playlist.name)}</option>`).join("")}</select></label><button class="wb-search-add-confirm" data-dj-action="online-confirm-add">确认加入</button><button class="wb-search-add-cancel" data-dj-action="online-cancel-add">取消</button></div>` : ""}
+      <div class="wb-playlist-list-heading"><span>SEARCH RESULTS / 搜索结果</span><span>${this.onlineSearchSubmitted ? "SEARCH UNAVAILABLE" : "等待查询"}</span></div>
+      <div class="wb-search-content"><div class="wb-search-placeholder"><span>⌕</span><strong>${this.onlineSearchSubmitted ? "在线搜索暂不可用" : "搜索网易云曲库"}</strong><p>${escapeHtml(this.onlineSearchNotice || "在线搜索接口将在 P2 阶段接入；当前不会显示本地示例歌曲。")}</p></div></div>
       ${this.onlineSearchNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.onlineSearchNotice)}</p>` : ""}`;
   }
   private settle(now: number) {
@@ -527,261 +611,171 @@ export class Workbench {
     patchRollingPanel(this.root.querySelector<HTMLElement>(".wb-content")!, html, !this.stage.classList.contains("reduce-motion"));
     this.root.querySelector(".wb-storage")!.textContent = this.storageOK ? "" : tr("当前无法保存进度，重新加载后可能丢失。");
   }
-  private djAction(button: HTMLButtonElement) {
+  private async djAction(button: HTMLButtonElement) {
     const action = button.dataset.djAction;
     if (action === "archive") { this.onLane(this.lane); this.setEnabled(false); return; }
-    if (action === "track-detail") { this.syncDjPreview(); this.onTrackOpen(); return; }
+    if (action === "track-detail") { this.onTrackOpen(); return; }
     if (action === "drawer-close") { this.closeRightDrawer(); return; }
+    if (action === "account-open") { document.querySelector<HTMLButtonElement>(".dj-account-button")?.click(); return; }
+    if (action === "open-cloud-playlists" || action === "open-cloud-create") {
+      this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist");
+      if (action === "open-cloud-create") {
+        this.playlistCreateOpen = true;
+        this.renderRightDrawer();
+        requestAnimationFrame(() => this.root.querySelector<HTMLInputElement>("#dj-playlist-name")?.focus());
+      }
+      return;
+    }
+    if (action === "open-online-search") {
+      this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search");
+      return;
+    }
     if (action === "agent-open") { this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="0"]')!, "agent"); return; }
     if (action === "playlist-open") {
-      this.selectedPlaylist = Number(button.dataset.index) || 0;
+      const id = button.dataset.id ?? "";
       this.playlistDetailOpen = true;
       this.playlistDrawerNotice = "";
-      this.renderRightDrawer();
-      this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-back']")?.focus({ preventScroll: true });
+      await this.loadPlaylistDetail(id);
+      requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-back']")?.focus({ preventScroll: true }));
       return;
     }
     if (action === "playlist-back") {
       this.playlistDetailOpen = false;
-      this.playlistExportConfirm = false;
+      this.playlistDetail = null;
+      this.pendingTrack = null;
       this.playlistDrawerNotice = "";
       this.renderRightDrawer();
-      this.root.querySelector<HTMLButtonElement>(`[data-dj-action='playlist-open'][data-index='${this.selectedPlaylist}']`)?.focus({ preventScroll: true });
+      this.root.querySelector<HTMLButtonElement>(`[data-dj-action='playlist-open'][data-id='${CSS.escape(this.selectedPlaylistId)}']`)?.focus({ preventScroll: true });
       return;
     }
-    if (action === "playlist-refresh") this.playlistDrawerNotice = "示例歌单已刷新；登录接入后会读取网易云云端数据。";
-    if (action === "playlist-create") this.playlistDrawerNotice = "新建歌单将接入原版网易云账号流程。";
+    if (action === "playlist-detail-refresh") { await this.loadPlaylistDetail(this.selectedPlaylistId); return; }
+    if (action === "playlist-refresh") { await this.refreshPlaylists(); return; }
+    if (action === "playlist-create") {
+      if (!this.accountUserId) { this.playlistDrawerNotice = "请先登录网易云账号。"; this.renderRightDrawer(); return; }
+      this.playlistCreateOpen = true;
+      this.playlistDrawerNotice = "";
+      this.renderRightDrawer();
+      this.root.querySelector<HTMLInputElement>("#dj-playlist-name")?.focus();
+      return;
+    }
+    if (action === "playlist-create-cancel") { this.playlistCreateOpen = false; this.renderRightDrawer(); return; }
+    if (action === "playlist-create-confirm") {
+      const name = this.root.querySelector<HTMLInputElement>("#dj-playlist-name")?.value.trim() ?? "";
+      if (!name) { this.playlistDrawerNotice = "请输入歌单名称。"; this.renderRightDrawer(); this.root.querySelector<HTMLInputElement>("#dj-playlist-name")?.focus(); return; }
+      this.mutationBusy = true;
+      this.playlistDrawerNotice = "正在创建歌单…";
+      this.renderRightDrawer();
+      try {
+        await yesmusicApi.createPlaylist(name);
+        this.playlistCreateOpen = false;
+        this.playlistDrawerNotice = `已创建「${name}」。`;
+        await this.refreshPlaylists();
+      } catch (error) {
+        this.playlistDrawerNotice = error instanceof Error ? error.message : "创建歌单失败，请重试。";
+      } finally { this.mutationBusy = false; this.renderRightDrawer(); }
+      return;
+    }
+    if (action === "playlist-delete") {
+      this.deleteConfirmId = button.dataset.id ?? "";
+      this.renderRightDrawer();
+      requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-delete-cancel']")?.focus({ preventScroll: true }));
+      return;
+    }
+    if (action === "playlist-delete-cancel") { this.deleteConfirmId = ""; this.renderRightDrawer(); return; }
+    if (action === "playlist-delete-confirm") {
+      const id = this.deleteConfirmId;
+      if (!id) return;
+      this.mutationBusy = true;
+      this.playlistDrawerNotice = "正在删除歌单…";
+      this.renderRightDrawer();
+      try {
+        await yesmusicApi.deletePlaylist(id);
+        this.deleteConfirmId = "";
+        if (this.selectedPlaylistId === id) { this.playlistDetailOpen = false; this.playlistDetail = null; }
+        this.playlistDrawerNotice = "歌单已从网易云删除。";
+        await this.refreshPlaylists();
+      } catch (error) {
+        this.playlistDrawerNotice = error instanceof Error ? error.message : "删除歌单失败，请重试。";
+      } finally { this.mutationBusy = false; this.renderRightDrawer(); }
+      return;
+    }
+    if (action === "playlist-track-add") {
+      const id = button.dataset.trackId ?? "";
+      this.pendingTrack = this.playlistDetail?.tracks?.find(track => track.id === id) ?? null;
+      this.targetPlaylistId = this.playlists.find(item => item.id !== this.selectedPlaylistId)?.id ?? "";
+      if (!this.pendingTrack) this.playlistDrawerNotice = "未找到该曲目，请刷新歌单后重试。";
+      else if (!this.targetPlaylistId) this.playlistDrawerNotice = "没有其他可加入的歌单。";
+      this.renderRightDrawer();
+      this.root.querySelector<HTMLSelectElement>("#dj-playlist-target")?.focus();
+      return;
+    }
+    if (action === "playlist-add-cancel") { this.pendingTrack = null; this.renderRightDrawer(); return; }
+    if (action === "playlist-add-confirm") {
+      if (!this.pendingTrack || !this.targetPlaylistId) return;
+      const track = this.pendingTrack;
+      const targetId = this.targetPlaylistId;
+      this.pendingTrack = null;
+      await this.mutatePlaylist("add", targetId, track.id, track.title);
+      return;
+    }
+    if (action === "playlist-track-remove") {
+      const trackId = button.dataset.trackId ?? "";
+      const trackName = button.dataset.trackName ?? "曲目";
+      if (this.selectedPlaylistId && trackId) await this.mutatePlaylist("del", this.selectedPlaylistId, trackId, trackName);
+      return;
+    }
     if (action === "playlist-export" || action === "playlist-export-card") {
-      if (action === "playlist-export-card") {
-        this.selectedPlaylist = Number(button.dataset.index) || 0;
-        this.playlistDetailOpen = true;
-      }
-      this.playlistExportConfirm = true;
-      this.playlistDrawerNotice = "";
-      this.renderRightDrawer();
-      requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export-cancel']")?.focus({ preventScroll: true }));
-      return;
-    }
-    if (action === "playlist-export-cancel") {
-      this.playlistExportConfirm = false;
-      this.renderRightDrawer();
-      requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']")?.focus({ preventScroll: true }));
-      return;
-    }
-    if (action === "playlist-export-confirm") {
-      const playlist = djPlaylists[this.selectedPlaylist] ?? djPlaylists[0];
-      this.playlistExportConfirm = false;
-      this.completedPlaylistExports.delete(playlist.code);
-      this.renderRightDrawer();
-      requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']")?.focus({ preventScroll: true }));
-      this.onPlaylistExport({ name: playlist.name, total: playlist.count, cover: playlist.cover });
-      return;
-    }
-    if (action === "playlist-delete") this.playlistDrawerNotice = "删除歌单会连接网易云账号；当前原型不会修改云端数据。";
-    if (action === "playlist-refresh" || action === "playlist-create" || action === "playlist-delete") {
+      this.playlistDrawerNotice = "歌单导出尚未接入；当前没有启动任务或写入文件。";
       this.renderRightDrawer();
       return;
     }
-    if (action === "playlist-card-play" || action === "playlist-play-all" || action === "playlist-track-play") {
-      const playlistIndex = action === "playlist-card-play" ? Number(button.dataset.index) || 0 : this.selectedPlaylist;
-      const playlist = djPlaylists[playlistIndex] ?? djPlaylists[0];
-      const trackIndex = action === "playlist-track-play" ? Number(button.dataset.trackIndex) || 0 : playlist.tracks[0] ?? 0;
-      const playlistPosition = Math.max(0, playlist.tracks.indexOf(trackIndex));
-      this.playPlaylistTrack(playlistIndex, playlistPosition);
-      return;
-    }
-    if (action === "playlist-track-add") this.playlistDrawerNotice = "添加曲目将接入原版网易云歌单操作；当前没有修改歌单。";
-    if (action === "playlist-track-remove") this.playlistDrawerNotice = "移除曲目将接入原版网易云歌单操作；当前没有修改歌单。";
-    if (action === "playlist-track-add" || action === "playlist-track-remove") {
-      this.renderRightDrawer();
+    if (["playlist-card-play", "playlist-play-all", "playlist-track-play", "online-track-play", "playing", "step-track", "download-track", "add-to-playlist", "confirm-add-track"].includes(action ?? "")) {
+      this.playerNotice = "播放器功能将在下一阶段接入。";
+      this.renderDjPlayer();
       return;
     }
     if (action === "online-search") {
       this.onlineSearchQuery = this.root.querySelector<HTMLInputElement>("#dj-online-search")?.value.trim().slice(0, 80) ?? "";
       this.onlineSearchSubmitted = Boolean(this.onlineSearchQuery);
-      this.onlineSearchNotice = this.onlineSearchQuery ? "已完成示例曲库匹配；当前原型没有请求网易云在线接口。" : "请输入歌曲名、歌手名或专辑名。";
+      this.onlineSearchNotice = this.onlineSearchQuery ? "在线搜索将在下一阶段接入。" : "请输入歌曲名、歌手名或专辑名。";
       this.renderRightDrawer();
       this.root.querySelector<HTMLInputElement>("#dj-online-search")?.focus({ preventScroll: true });
       return;
     }
-    if (action === "online-track-play") {
-      const trackIndex = Number(button.dataset.trackIndex);
-      const track = djDemoTracks[trackIndex];
-      if (!track) return;
-      this.activePlaylistIndex = -1;
-      this.previewTrackIndex = trackIndex;
-      setDjPreview(track.title, track.artist, track.album);
-      const media = window.rhineWallpaperMedia;
-      if (media) {
-        media.properties = { title: track.title, artist: track.artist, albumTitle: track.album };
-        media.timeline = { position: 0, duration: media.timeline?.duration || 243 };
-        media.playing = true;
-      }
-      this.playerNotice = "正在试听搜索结果的示例曲目；未连接真实音源。";
-      this.renderDjPlayer();
-      return;
-    }
-    if (action === "online-track-add") {
-      this.pendingOnlineTrackIndex = Number(button.dataset.trackIndex);
-      this.onlineSearchNotice = "请选择目标歌单。";
-      this.renderRightDrawer();
-      this.root.querySelector<HTMLSelectElement>("#dj-online-playlist")?.focus({ preventScroll: true });
-      return;
-    }
-    if (action === "online-cancel-add") {
-      this.pendingOnlineTrackIndex = null;
-      this.onlineSearchNotice = "";
-      this.renderRightDrawer();
-      return;
-    }
-    if (action === "online-confirm-add") {
-      const trackIndex = this.pendingOnlineTrackIndex;
-      const playlist = djPlaylists[this.playerPlaylistIndex];
-      const track = trackIndex === null ? undefined : djDemoTracks[trackIndex];
-      if (track && playlist && trackIndex !== null) {
-        playlist.tracks.push(trackIndex);
-        playlist.count += 1;
-        this.onlineSearchNotice = `已将「${track.title}」加入「${playlist.name}」的本次原型歌单；刷新页面后重置，尚未写入网易云。`;
-      }
-      this.pendingOnlineTrackIndex = null;
-      this.renderRightDrawer();
-      return;
-    }
-    if (action === "preview") {
-      this.activePlaylistIndex = -1;
-      const media = window.rhineWallpaperMedia!;
-      const title = button.dataset.track ?? "示例曲目 A";
-      setDjPreview(title);
-      media.properties = { title, artist: djPreview.artist };
-      media.playing = false;
-      this.playerNotice = "";
-      this.renderDjPlayer();
-    }
-    if (action === "playing") {
-      window.rhineWallpaperMedia!.playing = !window.rhineWallpaperMedia!.playing;
-      this.renderDjPlayer();
-    }
-    if (action === "step-track") {
-      const direction = Number(button.dataset.direction) < 0 ? -1 : 1;
-      const activePlaylist = djPlaylists[this.activePlaylistIndex];
-      if (activePlaylist?.tracks.length) {
-        this.activePlaylistPosition = (this.activePlaylistPosition + direction + activePlaylist.tracks.length) % activePlaylist.tracks.length;
-        this.previewTrackIndex = activePlaylist.tracks[this.activePlaylistPosition] ?? 0;
-      } else {
-        this.previewTrackIndex = (this.previewTrackIndex + direction + djDemoTracks.length) % djDemoTracks.length;
-      }
-      const track = djDemoTracks[this.previewTrackIndex];
-      setDjPreview(track.title, track.artist, track.album);
-      const media = window.rhineWallpaperMedia;
-      if (media) {
-        media.properties = { title: track.title, artist: track.artist, albumTitle: track.album };
-        media.timeline = { position: 0, duration: media.timeline?.duration || 243 };
-        media.playing = true;
-      }
-      this.onTrackStep(direction);
-      this.playerNotice = "已切换示例曲目，背景档案同步移动。";
-      this.renderDjPlayer();
-    }
-    if (action === "download-track") {
-      this.playerNotice = "此示例曲目尚无音源，接入曲库后可下载。";
-      this.renderDjPlayer();
-    }
-    if (action === "add-to-playlist") {
-      this.playlistPickerOpen = !this.playlistPickerOpen;
-      this.playerNotice = "";
-      this.renderDjPlayer();
-    }
-    if (action === "confirm-add-track") {
-      const playlist = ["Peak Hour Reference", "Warm-up Library", "Melodic Techno Sketch"][this.playerPlaylistIndex] ?? "Peak Hour Reference";
-      this.playlistPickerOpen = false;
-      this.playerNotice = `已将「${djPreview.title}」加入「${playlist}」的原型状态；尚未写入网易云。`;
-      this.renderDjPlayer();
-    }
-    if (action === "playlist") {
-      this.selectedPlaylist = Number(button.dataset.index) || 0;
-      this.renderPanel();
-    }
+    if (action === "online-track-add" || action === "online-cancel-add" || action === "online-confirm-add") return;
+    if (action === "preview") { this.playerNotice = "选择真实曲目后即可使用播放器。"; this.renderDjPlayer(); return; }
     if (action === "search") {
       this.searchQuery = this.root.querySelector<HTMLInputElement>("#dj-search")?.value.trim().slice(0, 80) ?? "";
       this.renderPanel();
+      return;
     }
     if (action === "save-root") {
       this.outputRoot = this.root.querySelector<HTMLInputElement>("#dj-output-root")?.value.trim().slice(0, 180) ?? "";
-      this.djNotice = this.outputRoot ? "路径已记在当前原型画面；尚未写入 YesMusic 配置。" : "请填写目标根目录。";
+      this.djNotice = this.outputRoot ? "路径设置将在导出功能接入时保存。" : "请输入目标根目录。";
       this.renderPanel();
     }
-    if (action === "browse-root") {
-      this.djNotice = "目录选择需接入原版 Electron 窗口。";
-      this.renderPanel();
-    }
-    if (action === "playlist-create" || action === "playlist-export") {
-      this.djNotice = action === "playlist-create" ? "新建歌单将接入原版网易云账号流程。" : "歌单导出将使用右侧配置的根目录。";
-      this.renderPanel();
-    }
-  }
-  private playPlaylistTrack(playlistIndex: number, position: number) {
-    const playlist = djPlaylists[playlistIndex] ?? djPlaylists[0];
-    if (!playlist.tracks.length) return;
-    this.selectedPlaylist = playlistIndex;
-    this.activePlaylistIndex = playlistIndex;
-    this.activePlaylistPosition = ((position % playlist.tracks.length) + playlist.tracks.length) % playlist.tracks.length;
-    this.previewTrackIndex = playlist.tracks[this.activePlaylistPosition] ?? 0;
-    const track = djDemoTracks[this.previewTrackIndex] ?? djDemoTracks[0];
-    setDjPreview(track.title, track.artist, track.album);
-    const media = window.rhineWallpaperMedia;
-    if (media) {
-      media.properties = { title: track.title, artist: track.artist, albumTitle: track.album };
-      media.timeline = { position: 0, duration: media.timeline?.duration || 243 };
-      media.playing = true;
-    }
-    this.playerNotice = "";
-    this.playlistDrawerNotice = `播放列表已切换为「${playlist.name}」，正在试听「${track.title}」示例曲目。`;
-    this.renderDjPlayer();
-    this.renderRightDrawer();
+    if (action === "browse-root") { this.djNotice = "目录选择将在导出功能接入时启用。"; this.renderPanel(); }
   }
   private renderDjPanel() {
     let html = "";
     if (this.lane === 0) html = `<div class="wb-dj-thread"><small>1001TRACKLISTS / CAMELOT / NETEASE</small><p>从现场 Setlist 到选曲与调性衔接，在 Agent 会话中准备下一场演出。</p></div><button class="wb-dj-link" data-dj-action="agent-open">打开 AI DJ 助手 <span>↗</span></button>`;
     if (this.lane === 1) {
-      const playlists = ["Peak Hour Reference", "Warm-up Library", "Melodic Techno Sketch"];
-      html = `<div class="wb-dj-list">${playlists.map((name, index) => `<button data-dj-action="playlist" data-index="${index}" aria-pressed="${this.selectedPlaylist === index}"><span>0${index + 1}</span><strong>${name}<small>示例歌单 / 曲目待接入</small></strong><i>↗</i></button>`).join("")}</div><p class="wb-muted">已选择：${playlists[this.selectedPlaylist]} · 浏览、编辑和导出将在接入后可用。</p><div class="wb-dj-controls"><button data-dj-action="playlist-create">新建歌单</button><button data-dj-action="playlist-export">导出歌单</button></div>${this.djNotice ? `<p class="wb-muted" role="status">${escapeHtml(this.djNotice)}</p>` : ""}<button class="wb-dj-link" data-dj-action="archive">打开歌单档案 <span>↗</span></button>`;
+      const playlistSummary = this.accountUserId
+        ? `<div class="wb-large">${String(this.playlists.length).padStart(2, "0")}<small>云端歌单</small></div><p class="wb-muted">当前账户已验证，歌单名称、曲目和封面来自网易云接口。</p>`
+        : `<div class="wb-large">—<small>网易云账户</small></div><p class="wb-muted">登录后读取真实云端歌单。</p>`;
+      html = `${playlistSummary}<div class="wb-dj-controls"><button data-dj-action="open-cloud-playlists">浏览云端歌单 ↗</button><button data-dj-action="open-cloud-create">新建歌单 ＋</button></div>${this.djNotice ? `<p class="wb-muted" role="status">${escapeHtml(this.djNotice)}</p>` : ""}`;
     }
-    if (this.lane === 2) html = `<div class="wb-dj-search"><input id="dj-search" type="search" aria-label="在线搜索歌曲" placeholder="输入歌曲名、歌手名或专辑…" value="${escapeHtml(this.searchQuery)}"/><button data-dj-action="search">搜索 ↗</button></div><p class="wb-muted">${this.searchQuery ? `查询预览：${escapeHtml(this.searchQuery)}。` : "网易云曲库在线搜索入口。"} 当前只展示示例曲目，不请求曲库。</p><div class="wb-dj-list">${["示例曲目 A", "示例曲目 B", "示例曲目 C"].map((name, index) => `<button data-dj-action="preview" data-track="${name}"><span>0${index + 1}</span><strong>${name}<small>艺人、专辑与匹配状态待接入</small></strong><i>试听 ↗</i></button>`).join("")}</div><button class="wb-dj-link" data-dj-action="archive">查看搜索档案 <span>↗</span></button>`;
+    if (this.lane === 2) html = `<div class="wb-dj-search"><p class="wb-muted">在线搜索歌曲入口。打开右侧搜索面板后可检索网易云曲库。</p><button data-dj-action="open-online-search">打开在线搜索 ↗</button></div>`;
     if (this.lane === 3) html = `<div class="wb-dj-root"><label for="dj-output-root">目标根路径 / OUTPUT ROOT</label><div><input id="dj-output-root" type="text" value="${escapeHtml(this.outputRoot)}" aria-label="导出根目录"/><button data-dj-action="browse-root">浏览目录…</button></div><p class="wb-muted">原版导出歌单时会在此目录下建立独立文件夹，并输出音频文件。</p><button class="wb-dj-link" data-dj-action="save-root">保存路径预览 <span>↗</span></button>${this.djNotice ? `<p class="wb-muted" role="status">${escapeHtml(this.djNotice)}</p>` : ""}</div>`;
     patchRollingPanel(this.root.querySelector<HTMLElement>(".wb-content")!, html, !this.stage.classList.contains("reduce-motion"));
     this.root.querySelector(".wb-storage")!.textContent = "";
   }
   private renderDjPlayer() {
     if (!isDjPrototype) return;
-    const media = window.rhineWallpaperMedia ?? {};
-    const duration = typeof media.timeline?.duration === "number" && Number.isFinite(media.timeline.duration) && media.timeline.duration > 0 ? media.timeline.duration : 243;
-    const position = typeof media.timeline?.position === "number" && Number.isFinite(media.timeline.position) ? Math.min(duration, Math.max(0, media.timeline.position)) : 51;
-    const progress = position / duration * 100;
-    const playlists = ["Peak Hour Reference", "Warm-up Library", "Melodic Techno Sketch"];
-    const activePlaylist = djPlaylists[this.activePlaylistIndex];
     this.root.querySelector<HTMLElement>(".wb-dj-player")!.innerHTML = `
-      <div class="wb-kicker">NOW PLAYING / PREVIEW <span>${activePlaylist ? `QUEUE / ${escapeHtml(activePlaylist.name)}` : "DEMO"}</span></div>
-      <button class="wb-dj-player-open" data-dj-action="track-detail" aria-label="打开 ${escapeHtml(djPreview.title)} 的三维歌曲档案">
-        <div class="wb-media">
-          <img class="wb-dj-cover-image" src="${escapeHtml(djPreview.cover)}" alt="示例曲目封面"/>
-          <div><small>${media.playing ? "正在试听 / 演示状态" : "已暂停 / 演示状态"}</small><h3>${escapeHtml(media.properties?.title || djPreview.title)}</h3><p>${escapeHtml(media.properties?.artist || djPreview.artist)}</p></div>
-        </div>
-        <span class="wb-dj-open-hint">打开歌曲 3D 档案 ↗</span>
-      </button>
-      <div class="wb-dj-progress">
-        <input id="dj-player-seek" type="range" min="0" max="${duration}" step="1" value="${position}" aria-label="播放进度" aria-valuetext="${durationText(position * 1000)} / ${durationText(duration * 1000)}" style="--seek-progress:${progress}%"/>
-        <div><time data-dj-position>${durationText(position * 1000)}</time><time>${durationText(duration * 1000)}</time></div>
-      </div>
-      <div class="wb-dj-player-foot">
-        <span>试听进度 / PREVIEW</span>
-        <div class="wb-dj-transport">
-          <button data-dj-action="step-track" data-direction="-1" aria-label="上一首">⏮</button>
-          <button class="wb-dj-play-toggle" data-dj-action="playing" aria-label="${media.playing ? "暂停" : "播放"}预览">${media.playing ? "Ⅱ" : "▶"}</button>
-          <button data-dj-action="step-track" data-direction="1" aria-label="下一首">⏭</button>
-        </div>
-      </div>
-      <div class="wb-dj-player-actions"><button data-dj-action="download-track">↓ 下载</button><button data-dj-action="add-to-playlist">＋ 加入歌单</button></div>
-      ${this.playlistPickerOpen ? `<div class="wb-dj-playlist-picker"><label for="dj-player-playlist">加入到 / ADD TO</label><select id="dj-player-playlist" aria-label="选择目标歌单">${playlists.map((name, index) => `<option value="${index}" ${index === this.playerPlaylistIndex ? "selected" : ""}>${name}</option>`).join("")}</select><button data-dj-action="confirm-add-track">确认加入</button></div>` : ""}
+      <div class="wb-kicker">NOW PLAYING / PLAYER <span>WAITING FOR TRACK</span></div>
+      <div class="wb-playlist-empty wb-player-empty"><strong>尚未选择曲目</strong><small>从云端歌单或在线搜索中选择歌曲后，播放器会显示真实封面与播放进度。</small></div>
+      <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport"><button disabled aria-label="上一首">⏮</button><button disabled aria-label="播放">▶</button><button disabled aria-label="下一首">⏭</button></div></div>
       ${this.playerNotice ? `<p class="wb-muted wb-dj-player-notice" role="status">${escapeHtml(this.playerNotice)}</p>` : ""}`;
   }
   private seekPlayer(value: number) {
@@ -795,11 +789,5 @@ export class Workbench {
     input.setAttribute("aria-valuetext", `${durationText(position * 1000)} / ${durationText(duration * 1000)}`);
     const current = this.root.querySelector<HTMLElement>("[data-dj-position]");
     if (current) current.textContent = durationText(position * 1000);
-  }
-  private syncDjPreview() {
-    const media = window.rhineWallpaperMedia;
-    const properties = media?.properties;
-    if (!properties?.title) return;
-    setDjPreview(properties.title, properties.artist, properties.albumTitle, media?.thumbnail?.thumbnail);
   }
 }

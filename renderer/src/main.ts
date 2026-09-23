@@ -62,6 +62,7 @@ let wallpaperEffects: WallpaperEffects | undefined;
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
 import { logo, brandHeading } from "./brand";
+import { clearNeteaseCookie, getNeteaseCookie, saveNeteaseCookie, yesmusicApi, NeteaseApiError } from "./yesmusic-api";
 
 $("#stage").innerHTML = `
   <div id="three-scene" class="three-scene"></div>
@@ -123,6 +124,15 @@ let mode: Mode = "boot",
 let modal: "search" | "saved" | "settings" | "account" | null = null,
   searchQuery = "",
   filter = tr("全部档案");
+type DjAuthStatus = "guest" | "checking" | "authenticated" | "expired";
+let djAuthStatus: DjAuthStatus = "guest";
+let djAuthMessage = "请使用网易云扫码、Electron 官方登录，或粘贴 MUSIC_U 凭据。";
+let djAuthUserId = "";
+let djQrImage = "";
+let djQrStatus = "";
+let djQrKey = "";
+let djQrTimer: number | undefined;
+let djQrRequesting = false;
 let activeTab = "overview";
 const reviewParams = new URLSearchParams(location.search);
 let frozenTime =
@@ -254,33 +264,8 @@ let resumeSelection = -1;
 let viewer: ModelViewer | undefined;
 const accessLog: { id: string; time: string }[] = [];
 const columnMemory = archiveColumns.map((_, lane) => columnFiles(lane)[0]);
-let playlistExportTimer: ReturnType<typeof setInterval> | undefined;
-function startPlaylistExport(playlist: { name: string; total: number; cover: string }) {
-  if (!ready || modal) return;
-  const exportArchive = records.findIndex(record => record.en === "EXPORT PROGRESS");
-  if (exportArchive < 0) return;
-  if (playlistExportTimer) clearInterval(playlistExportTimer);
-  delete $("#stage").dataset.playlistExportComplete;
-  $("#stage").dataset.playlistExporting = "true";
-  select(exportArchive);
-  scene?.setExportProgress({ ...playlist, completed: 0 });
-  viewer?.refreshExportScreen();
-  scene?.setMode("detail");
-  let completed = 0;
-  playlistExportTimer = setInterval(() => {
-    completed = Math.min(playlist.total, completed + Math.max(1, Math.ceil(playlist.total / 24)));
-    scene?.setExportProgress({ ...playlist, completed });
-    viewer?.refreshExportScreen();
-    if (completed >= playlist.total) {
-      clearInterval(playlistExportTimer);
-      playlistExportTimer = undefined;
-      // Keep the export archive selected so its screen keeps the final cover,
-      // track count, and completed progress after returning to the overview.
-      scene?.setMode("archive");
-      workbench?.completePlaylistExport(playlist.name);
-      notify(`「${playlist.name}」下载演示完成；原型没有写入音频文件。`);
-    }
-  }, 420);
+function startPlaylistExport(_playlist: { name: string; total: number; cover: string }) {
+  notify("歌单导出功能尚未接入，当前没有启动任务或写入文件。");
 }
 function recordAccess() {
   accessLog.unshift({
@@ -672,6 +657,7 @@ function closeModal(afterClose?: () => void) {
   modalClosing = true;
   audio.play("page-close");
   modalTransition!.hide(prefs.reduced, () => {
+    if (modal === "account") stopDjQrPolling();
     modal = null;
     modalClosing = false;
     $("#modal-root").replaceChildren();
@@ -684,11 +670,172 @@ function closeModal(afterClose?: () => void) {
     afterClose?.();
   });
 }
+function stopDjQrPolling() {
+  if (djQrTimer !== undefined) window.clearInterval(djQrTimer);
+  djQrTimer = undefined;
+  djQrRequesting = false;
+  djQrKey = "";
+}
+function updateDjAccountButton() {
+  const button = document.querySelector<HTMLButtonElement>(".dj-account-button");
+  if (!button) return;
+  const text = djAuthStatus === "authenticated" ? "已登录" : djAuthStatus === "checking" ? "验证中" : djAuthStatus === "expired" ? "登录失效" : "未登录";
+  button.innerHTML = `<span class="dj-account-dot" aria-hidden="true"></span>网易云账号 · ${text} <span>↗</span>`;
+  button.setAttribute("aria-label", djAuthStatus === "authenticated" ? "管理网易云账号" : "登录网易云账号");
+}
+function updateDjAccountModal() {
+  if (modal !== "account") return;
+  const status = $("#dj-account-status");
+  const detail = $("#dj-account-detail");
+  const message = $("#dj-account-message");
+  status.textContent = djAuthStatus === "authenticated" ? "已登录" : djAuthStatus === "checking" ? "正在验证" : djAuthStatus === "expired" ? "需要重新登录" : "未登录";
+  detail.textContent = djAuthStatus === "authenticated" ? `ACCOUNT ${djAuthUserId}` : djAuthStatus === "checking" ? "CHECKING SESSION" : djAuthStatus === "expired" ? "SESSION EXPIRED" : "GUEST SESSION";
+  message.textContent = djAuthMessage;
+  const image = $("#dj-account-qr") as HTMLImageElement;
+  image.src = djQrImage;
+  image.hidden = !djQrImage;
+  $("#dj-qr-status").textContent = djQrStatus;
+  const logout = $("#dj-account-logout");
+  logout.hidden = djAuthStatus !== "authenticated";
+}
+function publishDjAccount(authenticated: boolean, userId = "") {
+  window.dispatchEvent(new CustomEvent("yesmusic-account-updated", { detail: { authenticated, userId } }));
+}
+function normalizeCookieInput(input: string): string {
+  const value = input.trim();
+  if (!value) return "";
+  if (/(?:^|;\s*)MUSIC_U=/i.test(value)) return value;
+  if (value.includes("=")) return "";
+  return `MUSIC_U=${value}`;
+}
+async function validateDjCookie(candidate = getNeteaseCookie()) {
+  const cookie = normalizeCookieInput(candidate);
+  if (!cookie) {
+    djAuthStatus = "guest";
+    djAuthMessage = "请提供有效的 MUSIC_U 凭据。";
+    updateDjAccountButton();
+    updateDjAccountModal();
+    return false;
+  }
+  stopDjQrPolling();
+  djAuthStatus = "checking";
+  djAuthMessage = "正在向网易云验证账号并读取歌单权限…";
+  djAuthUserId = "";
+  saveNeteaseCookie(cookie);
+  updateDjAccountButton();
+  updateDjAccountModal();
+  try {
+    const account = await yesmusicApi.getPlaylists();
+    if (!account.userId) throw new NeteaseApiError("网易云未返回有效账号信息，请重新登录。", 401);
+    djAuthStatus = "authenticated";
+    djAuthUserId = account.userId;
+    djAuthMessage = `账号验证成功，已读取 ${account.playlists.length} 个云端歌单。`;
+    publishDjAccount(true, account.userId);
+    updateDjAccountButton();
+    updateDjAccountModal();
+    return true;
+  } catch (error) {
+    const invalid = error instanceof NeteaseApiError && error.status === 401;
+    if (invalid) clearNeteaseCookie();
+    djAuthStatus = invalid ? "expired" : "guest";
+    djAuthMessage = error instanceof Error ? error.message : "账号验证失败，请重试。";
+    publishDjAccount(false);
+    updateDjAccountButton();
+    updateDjAccountModal();
+    return false;
+  }
+}
+function qrCookieFrom(payload: Record<string, unknown>): string {
+  if (typeof payload.cookie === "string") return payload.cookie;
+  if (typeof payload.cookies === "string") return payload.cookies;
+  if (Array.isArray(payload.cookies)) {
+    return payload.cookies.map(item => {
+      const cookie = item as { name?: unknown; value?: unknown };
+      return typeof cookie.name === "string" && typeof cookie.value === "string" ? `${cookie.name}=${cookie.value}` : "";
+    }).filter(Boolean).join("; ");
+  }
+  return "";
+}
+async function startDjQrLogin() {
+  stopDjQrPolling();
+  djQrImage = "";
+  djQrStatus = "正在向网易云获取登录二维码…";
+  djAuthMessage = "请用网易云音乐 App 扫描二维码。";
+  updateDjAccountModal();
+  try {
+    const response = await fetch("/api/login/qr/key", { headers: { Accept: "application/json" } });
+    const payload = await response.json() as { code?: number; message?: string; unikey?: string; qrImg?: string };
+    if (!response.ok || !payload.unikey || !payload.qrImg) throw new Error(payload.message || "网易云未能生成登录二维码。");
+    djQrKey = payload.unikey;
+    djQrImage = payload.qrImg;
+    djQrStatus = "请使用网易云音乐 App 扫码；确认前请勿关闭此窗口。";
+    updateDjAccountModal();
+    djQrTimer = window.setInterval(() => { void pollDjQrLogin(); }, 2000);
+    void pollDjQrLogin();
+  } catch (error) {
+    djQrStatus = error instanceof Error ? error.message : "二维码获取失败，请稍后重试。";
+    updateDjAccountModal();
+  }
+}
+async function pollDjQrLogin() {
+  if (!djQrKey || djQrRequesting) return;
+  djQrRequesting = true;
+  try {
+    const response = await fetch(`/api/login/qr/check?key=${encodeURIComponent(djQrKey)}`, { headers: { Accept: "application/json" } });
+    const payload = await response.json() as Record<string, unknown>;
+    const code = Number(payload.code);
+    if (code === 800) {
+      stopDjQrPolling();
+      djQrStatus = "二维码已过期，请重新获取。";
+    } else if (code === 801) djQrStatus = "等待扫码…";
+    else if (code === 802) djQrStatus = "已扫码，请在手机上确认登录。";
+    else if (code === 803) {
+      const cookie = qrCookieFrom(payload);
+      stopDjQrPolling();
+      if (!cookie) djQrStatus = "网易云未返回可验证的 Cookie。请粘贴 MUSIC_U，或改用 Electron 官方登录。";
+      else {
+        djQrStatus = "授权成功，正在验证账号…";
+        updateDjAccountModal();
+        await validateDjCookie(cookie);
+        return;
+      }
+    } else if (code === 8821) {
+      stopDjQrPolling();
+      djQrStatus = "扫码暂不可用。请粘贴 MUSIC_U，或改用 Electron 官方登录。";
+    } else if (!response.ok) djQrStatus = "暂时无法查询扫码状态，请稍后重试。";
+    updateDjAccountModal();
+  } catch {
+    djQrStatus = "网络暂时无法查询扫码状态，正在重试…";
+    updateDjAccountModal();
+  } finally { djQrRequesting = false; }
+}
+async function submitDjManualCookie() {
+  const input = $("#dj-manual-cookie") as HTMLInputElement;
+  const cookie = normalizeCookieInput(input.value);
+  if (!cookie) {
+    djAuthMessage = "请粘贴 MUSIC_U 或完整的网易云 Cookie。";
+    updateDjAccountModal();
+    input.focus();
+    return;
+  }
+  input.value = "";
+  await validateDjCookie(cookie);
+}
+function logoutDjAccount() {
+  stopDjQrPolling();
+  clearNeteaseCookie();
+  djAuthStatus = "guest";
+  djAuthUserId = "";
+  djAuthMessage = "已退出网易云账号。";
+  publishDjAccount(false);
+  updateDjAccountButton();
+  updateDjAccountModal();
+}
 function renderModal() {
   if (!modal) return;
   modalTransition?.dispose();
   if (modal === "account")
-    $("#modal-root").innerHTML = `<div class="modal-backdrop"><section class="terminal-modal dj-account-modal" role="dialog" aria-modal="true" aria-label="网易云账号登录"><div class="modal-top"><span>YESMUSIC / NETEASE ACCOUNT</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div><h2>网易云账号<small>登录入口</small></h2><div class="dj-account-status"><span class="dj-account-dot" aria-hidden="true"></span><strong>未登录</strong><small>GUEST SESSION</small></div><p>登录后可读取云端歌单、管理曲目，并使用原版的歌单导出流程。</p><div class="dj-account-actions"><button data-action="dj-login-pending">扫码登录 <span>↗</span></button><button data-action="dj-login-pending">在网易云官方窗口登录 <span>↗</span></button></div><p class="dj-account-note">视觉原型尚未接入账号服务；此处不会请求或保存登录凭证。</p></section></div>`;
+    $("#modal-root").innerHTML = `<div class="modal-backdrop"><section class="terminal-modal dj-account-modal" role="dialog" aria-modal="true" aria-label="网易云账号登录"><div class="modal-top"><span>YESMUSIC / NETEASE ACCOUNT</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div><h2>网易云账号<small>登录入口</small></h2><div class="dj-account-status"><span class="dj-account-dot" aria-hidden="true"></span><strong id="dj-account-status"></strong><small id="dj-account-detail"></small></div><p id="dj-account-message"></p><div class="dj-account-qr" aria-live="polite"><img id="dj-account-qr" alt="网易云登录二维码" hidden/><small id="dj-qr-status">扫码状态尚未启动。</small></div><div class="dj-account-actions"><button data-action="dj-login-qr">获取扫码二维码 <span>↗</span></button>${window.electronAPI?.openNeteaseLogin ? '<button data-action="dj-login-official">在网易云官方窗口登录 <span>↗</span></button>' : '<button disabled title="此入口仅在桌面应用中可用">在网易云官方窗口登录 <span>桌面应用可用</span></button>'}</div><label class="dj-cookie-field" for="dj-manual-cookie">MUSIC_U / 手动登录<input id="dj-manual-cookie" type="password" autocomplete="off" placeholder="粘贴 MUSIC_U 或完整 Cookie"/></label><div class="dj-cookie-actions"><button data-action="dj-cookie-submit">验证并登录</button><button id="dj-account-logout" data-action="dj-logout" hidden>退出登录</button></div><p class="dj-account-note">凭据仅保存在本机应用的本地存储中，不会显示在页面或 URL 中。</p></section></div>`;
   else
   $("#modal-root").innerHTML =
     tr`<div class="modal-backdrop"><section class="terminal-modal ${modal === "settings" ? "settings-modal" : ""}" role="dialog" aria-modal="true" aria-label="${modal === "settings" ? tr("系统设置") : modal === "saved" ? tr("收藏档案") : tr("档案检索")}"><div class="modal-top"><span>${isDjPrototype ? "YESMUSIC" : "RHINE LAB"} / ${modal === "settings" ? "SYSTEM PREFERENCES" : "ARCHIVE DIRECTORY"}</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div>${modal === "settings" ? settingsMarkup() : tr`<h2>${modal === "saved" ? "SAVED ARCHIVES" : "ARCHIVE INDEX"}<small>${modal === "saved" ? tr("收藏档案") : tr("内部档案检索")}</small></h2><div class="search-field"><span>⌕</span><input id="archive-search" type="search" autocomplete="off" placeholder="输入档案编号、名称或${isDjPrototype ? "模块" : "科室"}" aria-label="检索档案"/><span class="key">ESC</span></div><div class="category-filters">${categories.map((c, i) => `<button data-filter="${escapeHtml(c)}" class="${i === 0 ? "active" : ""}">${escapeHtml(c)}</button>`).join("")}</div><div class="result-header"><span>FILE / 档案</span><span>${isDjPrototype ? "MODULE / 模块" : "DEPARTMENT / 科室"}</span><span>ACCESS</span></div><div id="search-results" class="search-results"></div><div class="modal-bottom"><span id="result-count"></span><span>${isDjPrototype ? "VISUAL PROTOTYPE · SAMPLE DATA" : "INTERNAL DATABASE <i>●</i> CONNECTED"}</span></div>`}</section></div>`;
@@ -697,6 +844,7 @@ function renderModal() {
   modalTransition = new SurfaceTransition(backdrop, $(".terminal-modal"));
   modalTransition.show(prefs.reduced);
   if (modal === "settings") updateQualitySummary();
+  if (modal === "account") updateDjAccountModal();
   if (modal === "search" || modal === "saved") {
     renderResults();
     requestAnimationFrame(() => {
@@ -858,7 +1006,10 @@ document.addEventListener("click", (e) => {
   }
   if (action === "dj-home" && isDjPrototype) workbench?.setEnabled(true);
   if (action === "dj-account" && isDjPrototype) { el.focus({ preventScroll: true }); openModal("account"); }
-  if (action === "dj-login-pending" && isDjPrototype) notify("登录流程将在功能迁移时接入；当前仅展示视觉入口。");
+  if (action === "dj-login-qr" && isDjPrototype) void startDjQrLogin();
+  if (action === "dj-login-official" && isDjPrototype) window.electronAPI?.openNeteaseLogin?.();
+  if (action === "dj-cookie-submit" && isDjPrototype) void submitDjManualCookie();
+  if (action === "dj-logout" && isDjPrototype) logoutDjAccount();
   if (action === "search" || action === "saved" || action === "settings") {
     el.focus({ preventScroll: true });
     openModal(action);
@@ -900,6 +1051,11 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const typing = e.target instanceof HTMLInputElement;
+  if (modal === "account" && e.key === "Enter" && typing && (e.target as HTMLInputElement).id === "dj-manual-cookie") {
+    e.preventDefault();
+    void submitDjManualCookie();
+    return;
+  }
   if (e.key === "Escape") {
     if (modal) closeModal();
     else if (mode === "detail" || (mode === "boot" && ready)) { const sound = mode === "detail" ? "back" : "ui-tick"; setMode("archive"); audio.play(sound); }
@@ -1386,6 +1542,22 @@ if (isWallpaper) {
     const button = (event.target as Element).closest<HTMLElement>("[data-workbench-mode]");
     if (button) closeModal(() => { workbench!.setEnabled(button.dataset.workbenchMode === "workbench"); });
   });
+}
+if (isDjPrototype) {
+  updateDjAccountButton();
+  window.electronAPI?.onCookieCaptured?.(cookie => { void validateDjCookie(cookie); });
+  window.addEventListener("yesmusic-auth-invalid", event => {
+    const detail = (event as CustomEvent<{ message?: string }>).detail;
+    clearNeteaseCookie();
+    djAuthStatus = "expired";
+    djAuthUserId = "";
+    djAuthMessage = detail?.message || "网易云登录已失效，请重新登录。";
+    publishDjAccount(false);
+    updateDjAccountButton();
+    updateDjAccountModal();
+  });
+  if (getNeteaseCookie()) void validateDjCookie();
+  else publishDjAccount(false);
 }
 void start();
 // Deterministic review controls: the running application, never a video surrogate.

@@ -101,3 +101,18 @@
 .wb-media > div:last-child { display: flex; flex-direction: column; align-items: flex-start; }
 #stage[data-custom-wallpaper-visible="true"] .wb-media small,
 #stage[data-custom-wallpaper-visible="true"] .wb-content > .wb-muted { color: var(--theme-ink, #242622); }
+html[data-dj-prototype="true"] .wb-playlist-create-form { display: grid; grid-template-columns: minmax(0,1fr); gap: 8px; margin: 0 0 16px; border: 1px solid #aaa59a; padding: 14px; }
+html[data-dj-prototype="true"] .wb-playlist-create-form label { color: #77756d; font-size: 10px; letter-spacing: .1em; }
+html[data-dj-prototype="true"] .wb-playlist-create-form input,
+html[data-dj-prototype="true"] .wb-playlist-export-confirm select { min-height: 38px; border: 1px solid #aaa59a; padding: 0 10px; background: transparent; color: #080a08; font: inherit; }
+html[data-dj-prototype="true"] .wb-playlist-create-form > div { display: flex; justify-content: flex-end; gap: 8px; }
+html[data-dj-prototype="true"] .wb-playlist-create-form button { min-height: 34px; border: 1px solid #aaa59a; padding: 0 12px; }
+html[data-dj-prototype="true"] .wb-playlist-create-form button:last-child { border-color: #080a08; background: #080a08; color: #f4f1e9; }
+html[data-dj-prototype="true"] .wb-playlist-empty { display: grid; align-content: center; justify-items: start; gap: 8px; min-height: 100px; color: #77756d; font-size: 12px; }
+html[data-dj-prototype="true"] .wb-playlist-empty strong { color: #080a08; font-size: 15px; font-weight: 500; }
+html[data-dj-prototype="true"] .wb-playlist-empty button { min-height: 34px; border: 1px solid #aaa59a; padding: 0 12px; color: #080a08; }
+html[data-dj-prototype="true"] .wb-playlist-no-cover { display: grid; place-items: center; width: 100%; height: 100%; background: #d5d2c8; color: #77756d; font-size: 10px; letter-spacing: .14em; }
+html[data-dj-prototype="true"] .wb-playlist-detail-cover > .wb-playlist-no-cover { position: absolute; inset: 0; }
+html[data-dj-prototype="true"] .wb-player-empty { min-height: 96px; }
+html[data-dj-prototype="true"] .wb-playlist-track-actions button:disabled,
+html[data-dj-prototype="true"] .wb-playlist-card-actions button:disabled { opacity: .35; cursor: not-allowed; }

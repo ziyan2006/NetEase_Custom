@@ -610,12 +610,13 @@ export function createAppServer() {
         }).catch(() => null);
 
         unikey = neteaseRes?.unikey || neteaseRes?.data?.unikey;
-      } catch (err) {
-        // Fallback below
+      } catch {
+        // Report an unavailable login service instead of rendering a fake QR.
       }
 
       if (!unikey) {
-        unikey = `dj_key_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        sendJson(response, 503, { code: 503, message: "无法从网易云获取有效二维码，请检查网络后重试。" });
+        return;
       }
 
       const qrImg = formatQrImageUrl(unikey);
@@ -632,24 +633,18 @@ export function createAppServer() {
           body: { type: 1, key },
         });
 
-        console.log(`[QR CHECK] key=${key} checkRes=`, JSON.stringify(checkRes));
         sendJson(response, 200, checkRes || { code: 801, message: "等待扫码" });
       } catch (err) {
-        console.error(`[QR CHECK ERROR] key=${key}`, err);
-        sendJson(response, 200, { code: 801, message: "等待扫码", key });
+        console.error("[QR CHECK ERROR] 网易云二维码状态查询失败");
+        sendJson(response, 200, { code: 801, message: "暂时无法查询扫码状态，请稍后重试。" });
       }
       return;
     }
 
     if (request.method === "GET" && urlObj.pathname === "/api/user/playlists") {
-      const cookie = urlObj.searchParams.get("cookie") || request.headers["x-cookie"] || "";
-      console.log(`[PLAYLISTS FETCH] cookie received=`, cookie);
+      const cookie = request.headers["x-cookie"] || urlObj.searchParams.get("cookie") || "";
       try {
-        const accountRes = await fetchNetEaseApi("/nuser/account/get", { cookie }).catch((e) => {
-          console.error("[ACCOUNT FETCH ERROR] fetch failed", e);
-          return null;
-        });
-        console.log(`[ACCOUNT FETCH] accountRes=`, JSON.stringify(accountRes));
+        const accountRes = await fetchNetEaseApi("/nuser/account/get", { cookie });
         const userId = accountRes?.account?.id || accountRes?.profile?.userId;
 
         if (!userId) {
@@ -661,12 +656,10 @@ export function createAppServer() {
           params: { uid: userId, limit: 100, timestamp: Date.now() },
           cookie,
         });
-        console.log(`[PLAYLISTS FETCH] playlistRes status=`, playlistRes?.code, `count=`, playlistRes?.playlist?.length);
-
         const playlists = parsePlaylistResponse(playlistRes);
         sendJson(response, 200, { code: 200, userId, playlists });
       } catch (err) {
-        console.error("[PLAYLISTS FETCH ERROR]", err);
+        console.error("[PLAYLISTS FETCH ERROR] 无法读取网易云账户或歌单");
         sendJson(response, 500, { message: "无法获取用户歌单: " + err.message });
       }
       return;
@@ -730,7 +723,7 @@ export function createAppServer() {
       const type = urlObj.searchParams.get("type") || "1";
       const limit = urlObj.searchParams.get("limit") || "30";
       const offset = urlObj.searchParams.get("offset") || "0";
-      const cookie = urlObj.searchParams.get("cookie") || "";
+      const cookie = request.headers["x-cookie"] || urlObj.searchParams.get("cookie") || "";
 
       if (!keywords.trim()) {
         sendJson(response, 400, { message: "搜索关键词不能为空" });
@@ -752,7 +745,7 @@ export function createAppServer() {
 
     if (request.method === "GET" && urlObj.pathname === "/api/playlist/detail") {
       const id = urlObj.searchParams.get("id");
-      const cookie = urlObj.searchParams.get("cookie") || "";
+      const cookie = request.headers["x-cookie"] || urlObj.searchParams.get("cookie") || "";
 
       if (!id) {
         sendJson(response, 400, { message: "缺少歌单 ID" });
@@ -803,7 +796,7 @@ export function createAppServer() {
 
     if (request.method === "GET" && urlObj.pathname === "/api/song/url") {
       const id = urlObj.searchParams.get("id");
-      const cookie = urlObj.searchParams.get("cookie") || "";
+      const cookie = request.headers["x-cookie"] || urlObj.searchParams.get("cookie") || "";
 
       if (!id) {
         sendJson(response, 400, { message: "缺少歌曲 ID" });
