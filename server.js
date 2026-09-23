@@ -199,10 +199,7 @@ async function serveStatic(request, response) {
     return;
   }
 
-  if (pathname === "/" && process.env.YESMUSIC_UI === "dj") pathname = "/dj/index.html";
-  else if (pathname === "/" || pathname === "/dj" || pathname === "/dj/") {
-    pathname = pathname === "/" ? "/index.html" : "/dj/index.html";
-  }
+  pathname = resolveStaticPath(pathname, process.env.YESMUSIC_UI);
 
   const filePath = resolve(publicDirectory, `.${pathname}`);
   const relativePath = relative(publicDirectory, filePath);
@@ -229,6 +226,12 @@ function writeSseEvent(response, payload) {
   if (response.destroyed || response.writableEnded) return false;
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
   return true;
+}
+
+export function resolveStaticPath(pathname, uiMode = process.env.YESMUSIC_UI) {
+  if (pathname === "/") return uiMode === "legacy" ? "/index.html" : "/dj/index.html";
+  if (pathname === "/dj" || pathname === "/dj/") return "/dj/index.html";
+  return pathname;
 }
 
 /**

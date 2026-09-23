@@ -11,8 +11,8 @@
     "renderer"
   ],
   "scripts": {
-    "start": "node server.js",
-    "electron": "electron .",
+    "start": "npm run build:ui && node server.js",
+    "electron": "npm run build:ui && electron .",
     "dev:ui": "npm run dev --workspace yesmusic-dj-renderer",
     "build:ui": "npm run build --workspace yesmusic-dj-renderer",
     "harness:web": "node harness/start.mjs",

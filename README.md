@@ -32,7 +32,16 @@ npm install
 npm start
 ```
 
-本地服务默认监听 `http://127.0.0.1:4178`；可通过 `PORT` 环境变量调整。
+`npm start` 会先构建 RhinoLab 来源的 DJ renderer，再启动本地服务。根路径 `http://127.0.0.1:4178/` 默认进入新 DJ 工作台；`/dj/` 是同一界面的显式地址。本地服务默认监听 `4178`，可通过 `PORT` 环境变量调整。
+
+需要临时打开旧版 YesMusic 界面时，在启动进程上设置 `YESMUSIC_UI=legacy`：
+
+```powershell
+$env:YESMUSIC_UI = "legacy"
+npm start
+```
+
+停止进程后可用 `Remove-Item Env:YESMUSIC_UI` 清除回退变量。Electron 会继承相同变量；未设置时也默认进入新 DJ 工作台。
 
 启动桌面应用：
 
@@ -40,11 +49,16 @@ npm start
 npm run electron
 ```
 
-Electron 会启动本机服务。若默认端口已被占用，会自动选择可用端口。
+此命令会先构建 renderer，再启动 Electron 和本机服务。若默认端口已被占用，会自动选择可用端口。旧版 Electron 回退示例：
+
+```powershell
+$env:YESMUSIC_UI = "legacy"
+npm run electron
+```
 
 ## DJ Copilot 配置
 
-在应用设置中填写 API Base URL、API Key、模型名与思考强度；设置中的配置存储在浏览器本地存储中，也可通过本地 `.env` 文件提供 `DEEPSEEK_API_KEY`。当前配置 API Key 后，Copilot 请求进入 DeepSeek Harness。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
+在应用设置中填写 API Base URL、API Key、模型名与思考强度。除 API Key 外的偏好存储在浏览器本地；API Key 仅保存在当前运行内存中，也可通过本地 `.env` 文件提供 `DEEPSEEK_API_KEY`。Copilot 请求进入 DeepSeek Harness。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
 
 ## DeepSeek Harness 排 Set
 

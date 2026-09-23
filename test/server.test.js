@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAppServer } from "../server.js";
+import { createAppServer, resolveStaticPath } from "../server.js";
 
 function createMultipartBody(fields) {
   const boundary = "----local-audio-converter-test";
@@ -104,7 +104,9 @@ test("converts an unencrypted WAV upload to MP3 locally", async (t) => {
   }
 });
 
-test("serves the local conversion page", async () => {
+test("serves the local conversion page through the explicit legacy fallback", async () => {
+  const previousUiMode = process.env.YESMUSIC_UI;
+  process.env.YESMUSIC_UI = "legacy";
   const server = createAppServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 
@@ -115,8 +117,19 @@ test("serves the local conversion page", async () => {
     assert.equal(response.status, 200);
     assert.match(await response.text(), /本地音频转换/);
   } finally {
-    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    try {
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    } finally {
+      if (previousUiMode === undefined) delete process.env.YESMUSIC_UI;
+      else process.env.YESMUSIC_UI = previousUiMode;
+    }
   }
+});
+
+test("routes the root to the DJ UI by default and honors the legacy fallback", () => {
+  assert.equal(resolveStaticPath("/"), "/dj/index.html");
+  assert.equal(resolveStaticPath("/", "legacy"), "/index.html");
+  assert.equal(resolveStaticPath("/dj/"), "/dj/index.html");
 });
 
 test("streams realtime progress events while exporting a playlist (SSE)", async () => {
