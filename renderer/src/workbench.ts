@@ -113,7 +113,11 @@ export class Workbench {
       openSearch: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search"),
       openPlaylists: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist"),
       openAccount: () => document.querySelector<HTMLButtonElement>(".dj-account-button")?.click(),
-      playSample: () => { /* Agent sample actions are replaced with server cards in P4. */ },
+      playTracks: async (tracks, index) => { if (tracks.length) await this.player.setQueue(tracks, index); },
+      addTrack: async (track) => {
+        this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist");
+        await this.prepareTrackAdd(track, false);
+      },
     });
     bindStaticTranslations(this.root);
     window.addEventListener(localeEvent, () => {

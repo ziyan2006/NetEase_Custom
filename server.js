@@ -62,6 +62,7 @@ const contentTypes = {
 };
 
 function sendJson(response, statusCode, payload) {
+  if (response.destroyed || response.writableEnded || response.headersSent) return;
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
 }
@@ -225,7 +226,9 @@ import { formatQrImageUrl, fetchNetEaseApi, parsePlaylistResponse, sanitizePlayl
 // ---------- SSE 流式导出工具 ----------
 
 function writeSseEvent(response, payload) {
+  if (response.destroyed || response.writableEnded) return false;
   response.write(`data: ${JSON.stringify(payload)}\n\n`);
+  return true;
 }
 
 /**
@@ -966,8 +969,10 @@ export function createAppServer() {
 
         const acc = { content: "", reasoning: "", card: null, toolEvents: [] };
         const abort = new AbortController();
-        const onClientGone = () => abort.abort();
-        request.once("close", onClientGone);
+        const onClientGone = () => {
+          if (!response.writableEnded) abort.abort();
+        };
+        response.once("close", onClientGone);
 
         try {
           await dispatchAgentWorkflow({
@@ -1004,15 +1009,17 @@ export function createAppServer() {
               toolEvents: acc.toolEvents,
             }).id;
           }
-          request.off("close", onClientGone);
-          writeSseEvent(response, {
-            type: "done",
-            data: "stream_finished",
-            sessionId,
-            userMessageId,
-            assistantMessageId,
-          });
-          response.end();
+          response.off("close", onClientGone);
+          if (!response.destroyed && !response.writableEnded) {
+            writeSseEvent(response, {
+              type: "done",
+              data: "stream_finished",
+              sessionId,
+              userMessageId,
+              assistantMessageId,
+            });
+            response.end();
+          }
         }
       } catch (err) {
         sendJson(response, 500, { message: "Agent 对话异常: " + err.message });
