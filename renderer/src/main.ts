@@ -41,6 +41,7 @@ import "./dj-prototype.css";
 import "./startup.css";
 import "./wallpaper.css";
 import { Workbench } from "./workbench";
+import { djPreview, setDjPreview } from "./dj-records";
 let workbench: Workbench | undefined;
 import { ArchivePlayground } from "./archive-playground";
 import { ARRAY_OPENING_END, openingShowsDetail } from "./wallpaper-opening";
@@ -563,6 +564,10 @@ function toggleSaved() {
 function renderDetail(preserveReveal = false) {
   tabTransition.cancel();
   const r = records[selected];
+  const djTrack = isDjPrototype && r.en === "TRACK PREVIEW" ? djPreview : null;
+  const trackCover = djTrack?.cover || r.cover;
+  const trackArtist = djTrack?.artist || r.artist || r.lead;
+  const trackAlbum = djTrack?.album || r.album;
   const exportName = isDjPrototype ? `YESMUSIC-${r.id}.txt` : `RHINE-LAB-${r.id}.txt`;
   const exportHref = isDjPrototype
     ? `data:text/plain;charset=utf-8,${encodeURIComponent([r.title, r.en, "", r.abstract, "", ...r.findings.map((item, index) => `${index + 1}. ${item}`), "", "YesMusic DJ 视觉原型 / 示例数据"].join("\n"))}`
@@ -571,9 +576,9 @@ function renderDetail(preserveReveal = false) {
   $("#detail-content").innerHTML = tr`
   <div class="detail-kicker"><span>FILE ${r.id}</span><span>${escapeHtml(r.clearance)}</span></div>
   <h2>${escapeHtml(r.en)}</h2><div class="detail-title-cn">${escapeHtml(r.title)}<span>${escapeHtml(r.category)}</span></div>
-  ${isDjPrototype && r.cover ? `<div class="dj-detail-track"><img src="${escapeHtml(r.cover)}" alt="${escapeHtml(r.title)} 封面"/><div><small>TRACK COVER / 封面</small><strong>${escapeHtml(r.album || "试听信息待接入")}</strong></div></div>` : ""}
+  ${isDjPrototype && trackCover ? `<div class="dj-detail-track"><img src="${escapeHtml(trackCover)}" alt="${escapeHtml(r.title)} 封面"/><div><small>TRACK COVER / 封面</small><strong>${escapeHtml(trackAlbum || "专辑信息待接入")}</strong></div></div>` : ""}
   <div class="detail-rule"></div>
-  <dl class="metadata"><div><dt>${isDjPrototype ? "MODULE / 模块" : "DEPARTMENT / 科室"}</dt><dd>${escapeHtml(r.department)}</dd></div><div><dt>${isDjPrototype ? "STAGE / 阶段" : "COLLECTION / 编目范围"}</dt><dd>${escapeHtml(r.date)}</dd></div><div><dt>${isDjPrototype && r.artist ? "ARTIST / 艺术家" : isDjPrototype ? "RELATED / 关联资源" : "RELATED / 相关人物"}</dt><dd>${escapeHtml(r.artist || r.lead)}</dd></div><div><dt>STATUS / 状态</dt><dd><i></i>${isDjPrototype ? "示例数据 · 可预览" : r.clearance === "RESTRICTED" ? tr("目录访问") : tr("已归档 · 可读取")}</dd></div></dl>
+  <dl class="metadata"><div><dt>${isDjPrototype ? "MODULE / 模块" : "DEPARTMENT / 科室"}</dt><dd>${escapeHtml(r.department)}</dd></div><div><dt>${isDjPrototype ? "STAGE / 阶段" : "COLLECTION / 编目范围"}</dt><dd>${escapeHtml(r.date)}</dd></div><div><dt>${isDjPrototype && (djTrack?.artist || r.artist) ? "ARTIST / 艺术家" : isDjPrototype ? "RELATED / 关联资源" : "RELATED / 相关人物"}</dt><dd>${escapeHtml(trackArtist)}</dd></div><div><dt>STATUS / 状态</dt><dd><i></i>${isDjPrototype ? r.en === "TRACK PREVIEW" ? djTrack?.artist || r.artist ? "网易云曲目 · 当前队列" : "等待选择歌曲" : "模块说明 · 可查看" : r.clearance === "RESTRICTED" ? tr("目录访问") : tr("已归档 · 可读取")}</dd></div></dl>
   <div class="detail-tabs" role="tablist"><button id="tab-overview" class="active" role="tab" aria-controls="tab-panel" aria-selected="true" data-tab="overview">01 <span>概述</span></button><button id="tab-notes" role="tab" aria-controls="tab-panel" aria-selected="false" data-tab="notes">02 <span>${isDjPrototype ? "工作记录" : "研究记录"}</span></button><button id="tab-history" role="tab" aria-controls="tab-panel" aria-selected="false" data-tab="history">03 <span>${isDjPrototype ? "操作记录" : "访问日志"}</span></button><i class="tab-indicator" aria-hidden="true"></i></div>
   <div id="tab-panel" class="tab-panel" role="tabpanel">${overview()}</div>
   <div class="detail-actions"><button class="solid-button" data-action="bookmark">${saved.has(r.id) ? "− REMOVE FROM SAVED" : "＋ SAVE ARCHIVE"}<span>${saved.has(r.id) ? tr("已收藏") : tr("收藏档案")}</span></button><a class="export-button" href="${exportHref}" download="${exportName}" aria-label="导出 ${r.id} 档案">EXPORT <span>↓</span></a></div>
@@ -699,6 +704,8 @@ function updateDjAccountModal() {
   logout.hidden = djAuthStatus !== "authenticated";
 }
 function publishDjAccount(authenticated: boolean, userId = "") {
+  // Keep the persistent account entry in sync before listeners refresh their own views.
+  updateDjAccountButton();
   window.dispatchEvent(new CustomEvent("yesmusic-account-updated", { detail: { authenticated, userId } }));
 }
 function normalizeCookieInput(input: string): string {
@@ -1525,14 +1532,11 @@ if (isWallpaper) {
     workbench?.setEnabled(false);
     select(trackIndex);
     openFile();
-  }, direction => {
-    if (!ready || modal) return;
-    const order = archiveColumns.flatMap((_, lane) => columnFiles(lane));
-    if (order.length < 2) return;
-    const current = fileLocation(selected);
-    const nextIndex = order[(order.indexOf(selected) + direction + order.length) % order.length];
-    const next = fileLocation(nextIndex);
-    select(nextIndex, { axis: current.lane === next.lane ? "row" : "lane", direction });
+  }, track => {
+    if (!isDjPrototype) return;
+    setDjPreview(track ? { title: track.title, artist: track.artists.join(" / "), album: track.album, coverUrl: track.coverUrl } : null);
+    const trackIndex = records.findIndex(record => record.en === "TRACK PREVIEW");
+    if (trackIndex >= 0 && ready && !modal) select(trackIndex);
   }, playlist => startPlaylistExport(playlist));
   playground = new ArchivePlayground($("#stage"), () => scene,
     () => ({ enabled: !!workbench?.enabled && mode === "archive" && ready, paused: Boolean(modal) || modalClosing || Boolean(wallpaperHost()?.paused) || document.hidden, reduced: prefs.reduced }),

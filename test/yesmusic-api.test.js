@@ -60,3 +60,48 @@ test("mutations preserve the backend request contract and business errors reject
     globalThis.fetch = originalFetch;
   }
 });
+
+test("search returns normalized real tracks without credentials in the URL", async () => {
+  const originalStorage = globalThis.localStorage;
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.localStorage = { getItem: () => "MUSIC_U=test-value" };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response(JSON.stringify({ code: 200, result: { songCount: 1, songs: [
+      { id: 88, name: "Opening", ar: [{ name: "A" }], al: { name: "Album", picUrl: "https://img/album.jpg" }, dt: 187000 },
+    ] } }), { status: 200 });
+  };
+  try {
+    const result = await api.yesmusicApi.searchSongs(" Opening ");
+    assert.equal(result.total, 1);
+    assert.equal(result.songs[0].id, "88");
+    assert.equal(result.songs[0].artists[0], "A");
+    assert.equal(calls[0].options.headers["x-cookie"], undefined);
+    assert.match(calls[0].url, /keywords=Opening/);
+    assert.equal(calls[0].url.includes("MUSIC_U"), false);
+    await assert.rejects(api.yesmusicApi.searchSongs("   "), /请输入歌曲名/);
+  } finally {
+    globalThis.localStorage = originalStorage;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("song URL uses x-cookie, and an unavailable source is returned as null", async () => {
+  const originalStorage = globalThis.localStorage;
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.localStorage = { getItem: () => "MUSIC_U=test-value" };
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response(JSON.stringify({ code: 200, data: [{ id: 88, url: null }] }), { status: 200 });
+  };
+  try {
+    assert.equal(await api.yesmusicApi.getSongUrl("88"), null);
+    assert.equal(calls[0].options.headers["x-cookie"], "MUSIC_U=test-value");
+    assert.equal(calls[0].url.includes("cookie="), false);
+  } finally {
+    globalThis.localStorage = originalStorage;
+    globalThis.fetch = originalFetch;
+  }
+});

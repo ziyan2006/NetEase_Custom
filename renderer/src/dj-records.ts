@@ -6,19 +6,19 @@ const cover = `data:image/svg+xml,${encodeURIComponent(coverSvg)}`;
 export const djPlaceholderCover = cover;
 
 export const djPreview = {
-  title: "示例曲目 A",
-  artist: "示例艺术家 / 待接入",
-  album: "试听信息待接入",
-  cover,
+  title: "尚未载入曲目",
+  artist: "",
+  album: "",
+  cover: "",
 };
 export const djDemoTracks = ["示例曲目 A", "示例曲目 B", "示例曲目 C"]
   .map(title => ({ title, artist: "示例艺术家 / 待接入", album: "试听信息待接入" }));
 
-export function setDjPreview(title: string, artist = "示例艺术家 / 待接入", album = "试听信息待接入", image = cover) {
-  djPreview.title = title;
-  djPreview.artist = artist;
-  djPreview.album = album || "试听信息待接入";
-  djPreview.cover = image || cover;
+export function setDjPreview(track: { title: string; artist?: string; album?: string; coverUrl?: string | null } | null) {
+  djPreview.title = track?.title || "尚未载入曲目";
+  djPreview.artist = track?.artist || "";
+  djPreview.album = track?.album || "";
+  djPreview.cover = track?.coverUrl || "";
 }
 
 const groups = [
@@ -43,7 +43,7 @@ const groups = [
     items: [
       ["歌曲检索", "TRACK SEARCH", "对应原版的网易云曲库在线搜索，可按歌曲名、歌手或专辑查询。", "输入搜索词", "查看曲库结果", "来源于网易云"],
       ["搜索结果", "SEARCH RESULTS", "原版搜索结果可以试听，并把曲目加入云端歌单。", "查看曲目详情", "试听单曲", "添加到目标歌单"],
-      ["示例曲目 A", "TRACK PREVIEW", "试听状态在常驻播放器展示。打开此档案可查看示例封面和作者字段。", "切换播放状态", "显示封面与作者", "接入真实音频后可用"],
+      ["当前播放曲目", "TRACK PREVIEW", "打开此档案可查看队列当前歌曲、真实封面和作者信息。", "显示当前播放曲目", "查看封面与作者", "状态来自真实音频"],
     ],
   },
   {
@@ -75,8 +75,8 @@ export const djContent = {
       en,
       department: group.category,
       category: group.category,
-      date: "视觉原型 / 示例数据",
-      get lead() { return track ? djPreview.artist : "YesMusic DJ Workspace"; },
+      get date() { return track ? "当前播放状态" : "视觉原型 / 模块说明"; },
+      get lead() { return track ? djPreview.artist || "播放曲目" : "YesMusic DJ Workspace"; },
       clearance: "PROTOTYPE",
       abstract,
       findings: [...findings],

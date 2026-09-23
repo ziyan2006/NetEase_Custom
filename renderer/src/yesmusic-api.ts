@@ -124,6 +124,27 @@ export const yesmusicApi = {
     return { ...playlist, tracks: rawTracks.map(normalizeNeteaseTrack).filter((item): item is NeteaseTrack => Boolean(item)) };
   },
 
+  async searchSongs(keywords: string, signal?: AbortSignal): Promise<{ songs: NeteaseTrack[]; total: number }> {
+    const query = keywords.trim().slice(0, 80);
+    if (!query) throw new NeteaseApiError("请输入歌曲名、歌手名或专辑名。", 400);
+    const params = new URLSearchParams({ keywords: query, limit: "30", offset: "0" });
+    const payload = record(await requestJson<unknown>(`/api/song/search?${params}`, { signal, authenticated: false }));
+    const result = record(payload.result ?? payload);
+    const songs = Array.isArray(result.songs)
+      ? result.songs.map(normalizeNeteaseTrack).filter((item): item is NeteaseTrack => Boolean(item))
+      : [];
+    return { songs, total: Math.max(0, Number(result.songCount ?? result.total) || songs.length) };
+  },
+
+  async getSongUrl(id: string, signal?: AbortSignal): Promise<string | null> {
+    if (!id) throw new NeteaseApiError("缺少歌曲 ID", 400);
+    const params = new URLSearchParams({ id });
+    const payload = record(await requestJson<unknown>(`/api/song/url?${params}`, { signal }));
+    const result = Array.isArray(payload.data) ? payload.data : Array.isArray(record(payload.data).data) ? record(payload.data).data as unknown[] : [];
+    const first = record(result[0]);
+    return text(first.url) || null;
+  },
+
   async createPlaylist(name: string): Promise<void> {
     await requestJson("/api/playlist/create", { method: "POST", body: { name, privacy: 0 } });
   },
