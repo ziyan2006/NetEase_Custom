@@ -1,6 +1,6 @@
 # DeepSeek Harness Runtime
 
-The main application launches `sdk-runtime.mjs` on demand for natural-language DJ Set planning. It exposes only two restricted tools: anonymous NetEase catalog search and deterministic Camelot transition analysis. It cannot access the Electron login cookie, shell, arbitrary filesystem paths, or arbitrary network URLs.
+The main application launches `sdk-runtime.mjs` on demand. Copilot talks to DeepSeek Harness: DSH skills (`harness/skills/`) hold tool playbooks; `dj-crate-plugin.mjs` registers the restricted tools. Bash, filesystem, web search, and subagents stay disabled. The runtime cannot access the Electron login cookie or arbitrary network URLs.
 
 Install the application dependencies and configure `DEEPSEEK_API_KEY` before starting YesMusic:
 

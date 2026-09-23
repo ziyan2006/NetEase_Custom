@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isUnreleasedTrack,
+  isReal1001TracklistUrl,
   cleanTracklistLine,
   parseSingleTrack,
   parseTracklistText,
@@ -103,4 +104,15 @@ test("Tracklist Parser: HTML Parsing (Schema.org / DOM Fallback)", () => {
   assert.equal(parsed.tracks[0].artist, "Anyma & Rebūke");
   assert.equal(parsed.tracks[0].title, "Syren (Extended Mix)");
   assert.equal(parsed.tracks[1].artist, "Anyma & Chris Avantgarde");
+});
+
+test("Tracklist Parser: real 1001TL URLs reject /dynamic/ placeholders", () => {
+  assert.equal(
+    isReal1001TracklistUrl("https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage.html"),
+    true
+  );
+  assert.equal(
+    isReal1001TracklistUrl("https://www.1001tracklists.com/tracklist/dynamic/culture-shock-worship-london-2026.html"),
+    false
+  );
 });

@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mapHarnessNotification, shouldRouteToHarnessCrate, HarnessRuntime } from "../lib/dj-agent/harness-runtime.js";
+import { existsSync } from "node:fs";
+import { mapHarnessNotification, shouldRouteToHarnessCrate, HarnessRuntime, resolveHarnessNodeCommand } from "../lib/dj-agent/harness-runtime.js";
+
+test("Harness launch resolves a real Node binary", () => {
+  const resolved = resolveHarnessNodeCommand();
+  assert.ok(resolved.command);
+  assert.equal(existsSync(resolved.command), true);
+  assert.equal(resolved.runAsNode, Boolean(process.versions.electron));
+});
 
 test("Harness crate routing: positive set-planning cases", () => {
   assert.equal(shouldRouteToHarnessCrate("帮我排一套 128 BPM 的 Melodic Techno"), true);
@@ -11,6 +19,7 @@ test("Harness crate routing: positive set-planning cases", () => {
   assert.equal(shouldRouteToHarnessCrate("crate digging for tech house"), true);
   assert.equal(shouldRouteToHarnessCrate("DJ set 编排"), true);
   assert.equal(shouldRouteToHarnessCrate("tracklist 策划"), true);
+  assert.equal(shouldRouteToHarnessCrate("做一张适合 128BPM 峰值时段 (Peak Time) 的高能量 Bass House 歌单"), true);
 });
 
 test("Harness crate routing: negative cases (standalone recommendation and excluded intents)", () => {
@@ -155,9 +164,9 @@ test("HarnessRuntime: verifies packaged launch env and spawn parameters (Node mo
     });
 
     assert.ok(capturedOptions, "Harness options should be passed");
-    assert.equal(capturedOptions.launch.env.ELECTRON_RUN_AS_NODE, "1");
     assert.equal(capturedOptions.launch.env.DEEPSEEK_API_KEY, "test-api-key");
     assert.equal(capturedOptions.launch.command, process.execPath);
+    assert.equal(capturedOptions.launch.env.ELECTRON_RUN_AS_NODE, undefined);
     assert.equal(capturedOptions.launch.cwd, `${fakeUserData}\\harness-runtime`);
     assert.ok(capturedOptions.launch.args[0].includes("sdk-runtime.mjs"));
   } finally {

@@ -6,6 +6,7 @@ delete process.env.https_proxy;
 delete process.env.ALL_PROXY;
 delete process.env.all_proxy;
 
+import "./load-env.js";
 import { createServer as createHttpServer } from "node:http";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
@@ -17,7 +18,8 @@ import { inspectAudioFile } from "./lib/audio-file.js";
 import { downloadAndExportTrack, getFfmpegBinary } from "./lib/audio-exporter.js";
 import { dispatchAgentWorkflow } from "./lib/dj-agent/agent-dispatcher.js";
 import { fetchAndParse1001TracklistUrl, parseTracklistText, searchArtistRecentSets } from "./lib/dj-agent/tracklist-parser.js";
-import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey } from "./lib/dj-agent/camelot-engine.js";
+import { get1001tlStatus, import1001tlCookies, probe1001CookieHealth } from "./lib/dj-agent/tl-session.js";
+import { getCompatibleKeys, analyzeTransition, normalizeCamelotKey, extractCamelotKeyFromText } from "./lib/dj-agent/camelot-engine.js";
 import { batchMatchTracklist } from "./lib/dj-agent/track-matcher.js";
 import { mapHarnessTrackSearchResults, parseHarnessTrackSearchRequest } from "./lib/dj-agent/harness-bridge.js";
 import { DEFAULT_LLM_CONFIG, listAvailableModels } from "./lib/dj-agent/llm-client.js";
@@ -505,7 +507,7 @@ async function runDiagnostic() {
 export function createAppServer() {
   const sessionStore = new SessionStore();
   const harnessRuntime = new HarnessRuntime();
-  if (process.env.NODE_ENV !== "test") {
+  if (process.env.YESMUSIC_CDN_DIAGNOSTIC === "1") {
     setTimeout(runDiagnostic, 2000);
   }
   const server = createHttpServer(async (request, response) => {
@@ -877,8 +879,10 @@ export function createAppServer() {
         });
         response.write("retry: 1000\n\n");
 
-        // 流式事件累积 (用于持久化完整消息对象: 正文/思考链/卡片/工具过程)
         const acc = { content: "", reasoning: "", card: null, toolEvents: [] };
+        const abort = new AbortController();
+        const onClientGone = () => abort.abort();
+        request.once("close", onClientGone);
 
         try {
           await dispatchAgentWorkflow({
@@ -888,6 +892,7 @@ export function createAppServer() {
             config,
             sessionId,
             harnessRuntime,
+            signal: abort.signal,
             onStream: (evt) => {
               writeSseEvent(response, evt);
               if (evt.type === "text") acc.content += evt.data;
@@ -914,6 +919,7 @@ export function createAppServer() {
               toolEvents: acc.toolEvents,
             }).id;
           }
+          request.off("close", onClientGone);
           writeSseEvent(response, {
             type: "done",
             data: "stream_finished",
@@ -940,6 +946,77 @@ export function createAppServer() {
         sendJson(response, 200, mapHarnessTrackSearchResults(query, neteaseRes?.result?.songs || []));
       } catch (err) {
         sendJson(response, 400, { message: "Harness 曲库检索异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/search-sets") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const artist = String(params.artist || "").trim();
+        if (!artist) {
+          sendJson(response, 400, { message: "缺少 artist 参数" });
+          return;
+        }
+        sendJson(response, 200, await searchArtistRecentSets(artist));
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness 现场检索异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/parse-setlist") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const { url, text } = params;
+        let parsedSet;
+        if (url) {
+          parsedSet = await fetchAndParse1001TracklistUrl(url, { filterUnreleased: true });
+        } else if (text) {
+          parsedSet = parseTracklistText(text, { filterUnreleased: true });
+        } else {
+          sendJson(response, 400, { message: "缺少 url 或 text 参数" });
+          return;
+        }
+        sendJson(response, 200, parsedSet);
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness 现场解析异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/analyze-camelot") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        const key = normalizeCamelotKey(params.key)
+          || extractCamelotKeyFromText(params.query || params.key || "");
+        const toKey = normalizeCamelotKey(params.toKey);
+        const compatible = key ? getCompatibleKeys(key) : [];
+        const fromBpm = Number(params.fromBpm);
+        const toBpm = Number(params.toBpm);
+        const transition = key && toKey
+          ? analyzeTransition(key, Number.isFinite(fromBpm) ? fromBpm : undefined, toKey, Number.isFinite(toBpm) ? toBpm : undefined)
+          : null;
+        sendJson(response, 200, {
+          key: key || "",
+          fromKey: key || "",
+          compatible,
+          transition,
+        });
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness Camelot 分析异常: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/harness/1001tl-status") {
+      try {
+        sendJson(response, 200, await get1001tlStatus({ probe: true }));
+      } catch (err) {
+        sendJson(response, 400, { message: "Harness 1001TL 状态异常: " + err.message });
       }
       return;
     }
@@ -989,6 +1066,38 @@ export function createAppServer() {
       return;
     }
 
+
+    if (request.method === "GET" && urlObj.pathname === "/api/agent/1001tl/status") {
+      try {
+        const probe = urlObj.searchParams.get("probe") !== "0";
+        const status = await get1001tlStatus({ probe });
+        sendJson(response, 200, status);
+      } catch (err) {
+        sendJson(response, 500, { message: "读取 1001TL 状态失败: " + err.message });
+      }
+      return;
+    }
+
+    if (request.method === "POST" && urlObj.pathname === "/api/agent/1001tl/cookies") {
+      try {
+        const bodyStr = await readJsonBody(request);
+        const params = JSON.parse(bodyStr || "{}");
+        import1001tlCookies({
+          cookies: params.cookies,
+          cookieHeader: params.cookieHeader || params.cookie,
+        });
+        const health = await probe1001CookieHealth();
+        sendJson(response, 200, {
+          ready: Boolean(health.ok),
+          reason: health.reason,
+          setCount: health.setCount || 0,
+          lastCheckedAt: health.checkedAt,
+        });
+      } catch (err) {
+        sendJson(response, 400, { message: err.message || "保存 1001TL Cookie 失败" });
+      }
+      return;
+    }
 
     if (request.method === "POST" && urlObj.pathname === "/api/agent/artist-sets") {
       try {
@@ -1148,7 +1257,8 @@ export function createAppServer() {
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const port = Number(process.env.PORT ?? 4178);
-  createAppServer().listen(port, () => {
+  createAppServer().listen(port, "127.0.0.1", () => {
+    process.env.YESMUSIC_AGENT_BRIDGE_URL = `http://127.0.0.1:${port}`;
     console.log(`本地音频转换工具正在 http://127.0.0.1:${port} 运行`);
   });
 }

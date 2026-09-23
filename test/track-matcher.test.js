@@ -44,6 +44,14 @@ test("Track Matcher: Candidate Scoring (Exact match vs Remix vs Instrumental)", 
   assert.ok(scoreInst < 50, "Instrumental score should be low");
 });
 
+test("Track Matcher: FISHER is not Amiran Fisher", () => {
+  const target = { artist: "FISHER", title: "Losing It", remix: "" };
+  const amiran = { name: "Losing It (Original Mix)", artists: [{ name: "Amiran Fisher" }] };
+  const fisher = { name: "Losing It", artists: [{ name: "FISHER" }] };
+  assert.equal(scoreCandidateSong(target, amiran), 0);
+  assert.ok(scoreCandidateSong(target, fisher) >= 80);
+});
+
 test("Track Matcher: Extended Mix preference for DJ", () => {
   const target = {
     artist: "Anyma",

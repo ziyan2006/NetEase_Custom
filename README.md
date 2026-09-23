@@ -10,6 +10,7 @@
 - Electron 原生目录选择与网易云官方登录窗口；登录成功后自动接收 `MUSIC_U` Cookie
 - DJ Copilot：流式对话、SQLite 会话历史、模型设置和工具执行记录
 - 1001Tracklists 现场曲目单解析、网易云曲目匹配和歌单创建
+- Electron 内验证 1001Tracklists，复用 Cookie 检索真实现场；网页模式可手动导入 Cookie
 - Camelot 调性轮盘与 BPM 过渡建议
 - DeepSeek Harness SDK runtime：通过受限本机工具支持自然语言排 Set
 
@@ -43,25 +44,23 @@ Electron 会启动本机服务。若默认端口已被占用，会自动选择�
 
 ## DJ Copilot 配置
 
-Copilot 使用兼容 OpenAI Chat Completions API 的模型服务。在应用设置中填写 API Base URL、API Key、模型名与思考强度；配置仅存储在浏览器本地存储中。
-
-支持 DeepSeek、OpenAI、通义千问和 Ollama 兼容端点。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
+在应用设置中填写 API Base URL、API Key、模型名与思考强度；设置中的配置存储在浏览器本地存储中，也可通过本地 `.env` 文件提供 `DEEPSEEK_API_KEY`。当前配置 API Key 后，Copilot 请求进入 DeepSeek Harness。1001Tracklists 等外部数据源可能受网络、登录状态和站点反爬策略影响。
 
 ## DeepSeek Harness 排 Set
 
-自然语言排 Set 请求会进入 `harness/` 下的 DeepSeek Harness SDK runtime。runtime 只加载受限的曲库检索和 Camelot 过渡工具；1001Tracklists 解析、网易云登录 Cookie 和导出能力仍由本机服务处理。Harness 需要 Node.js 22.19 或更高版本。
+配置 API Key 后的 Copilot 请求会进入 `harness/` 下的 DeepSeek Harness SDK runtime。runtime 加载曲库检索、1001Tracklists 现场检索与解析、Camelot 过渡等受限本机工具；网易云登录 Cookie 和导出能力仍由本机服务处理。Harness 需要 Node.js 22.19 或更高版本。
 
 ```bash
 npm install
 ```
 
-配置 `DEEPSEEK_API_KEY` 后启动主服务即可。Harness runtime 按需启动，不需要单独启动 Web sidecar；若 Harness 不可用，请求会回退到原有本地 DJ 编排链路。`npm --prefix harness install` 只用于可选的独立 Web 调试界面。
+配置 `DEEPSEEK_API_KEY` 后启动主服务即可。Harness runtime 按需启动，不需要单独启动 Web sidecar。若 Harness 不可用，Copilot 会提示错误；缺少 API Key 时仍可解析粘贴的 Setlist 文本或使用本地 Camelot 分析，排 Set 会提示配置 Key。`npm --prefix harness install` 只用于可选的独立 Web 调试界面。
 
 ## 本地数据
 
 - Electron 会话数据库：系统应用数据目录下的 `sessions.db`
 - 非 Electron 运行时会话数据库：`data/sessions.db`
-- 1001Tracklists 登录 Cookie 缓存：`data/1001tl_session_cookies.json`
+- 1001Tracklists Cookie 缓存：Electron 位于系统应用数据目录，非 Electron 运行时位于 `data/1001tl_session_cookies.json`
 
 这些运行数据不应提交到版本控制。
 
@@ -90,9 +89,11 @@ npm run dist            # 目录版和便携版
 main.js                 Electron 主进程
 preload.cjs             受限的桌面端 IPC 接口
 server.js               本地 HTTP 服务与业务 API
+load-env.js             可选的本地 .env 配置加载
 public/                 页面、播放器、歌单和 Copilot 前端
 lib/                    音频、网易云、会话与 DJ Agent 逻辑
 lib/dj-agent/           Skill 路由、Setlist、调性和模型客户端
+harness/                DeepSeek Harness runtime、受限工具和技能说明
 test/                   Node.js 测试
 docs/                   API 和设计文档
 ```

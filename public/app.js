@@ -271,6 +271,7 @@ function updateLoginStatusUI(isLoggedIn, userId = "", userDetail = null) {
       btnHeaderLogin.className = "btn btn-primary";
     }
   }
+  window.dispatchEvent(new CustomEvent("netease-auth-changed", { detail: { isLoggedIn: Boolean(isLoggedIn) } }));
 }
 
 if (btnHeaderLogin) {

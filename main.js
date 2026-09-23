@@ -1,14 +1,42 @@
 import { app, BrowserWindow, dialog, ipcMain, session } from "electron";
 import { createAppServer } from "./server.js";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  saveCached1001Cookies,
+  probe1001CookieHealth,
+  migrateLegacy1001tlCookies,
+  TL_HOME_URL,
+  TL_USER_AGENT,
+} from "./lib/dj-agent/tl-session.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow = null;
 let loginWindow = null;
+let tlVerifyWindow = null;
 let server = null;
+
+function get1001tlSession() {
+  return session.fromPartition("persist:1001tl");
+}
+
+async function export1001tlCookiesFromPartition() {
+  const tlSession = get1001tlSession();
+  const cookies = await tlSession.cookies.get({ url: TL_HOME_URL });
+  if (Array.isArray(cookies) && cookies.length > 0) {
+    saveCached1001Cookies(cookies);
+  }
+  return cookies || [];
+}
+
+function notify1001tlStatus(payload) {
+  if (mainWindow) {
+    mainWindow.webContents.send("1001tl:cookies-captured", payload);
+  }
+}
 
 function createWindow(port) {
   mainWindow = new BrowserWindow({
@@ -133,12 +161,105 @@ ipcMain.on("netease:open-login", () => {
   });
 });
 
+ipcMain.on("1001tl:open-verify", () => {
+  if (tlVerifyWindow) {
+    tlVerifyWindow.focus();
+    return;
+  }
+
+  const tlSession = get1001tlSession();
+  try {
+    tlSession.setUserAgent(TL_USER_AGENT);
+  } catch {
+    // older Electron builds may not expose session.setUserAgent
+  }
+
+  tlVerifyWindow = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    title: "验证 1001Tracklists 现场数据源 · 完成安全验证后将自动保存",
+    parent: mainWindow,
+    modal: true,
+    show: false,
+    backgroundColor: "#0b0f19",
+    autoHideMenuBar: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      session: tlSession,
+    },
+  });
+
+  tlVerifyWindow.once("ready-to-show", () => {
+    if (tlVerifyWindow) tlVerifyWindow.show();
+  });
+
+  tlVerifyWindow.webContents.setUserAgent(TL_USER_AGENT);
+  tlVerifyWindow.loadURL(TL_HOME_URL);
+
+  let capturing = false;
+  let closedAfterSuccess = false;
+  const pollInterval = setInterval(async () => {
+    if (!tlVerifyWindow || capturing) return;
+    try {
+      const pageInfo = await tlVerifyWindow.webContents.executeJavaScript(`
+        (() => {
+          const title = document.title || "";
+          const body = document.body ? document.body.innerText : "";
+          return {
+            title,
+            isChallenge: title.includes("Just a moment")
+              || body.includes("Please wait, you will be forwarded")
+              || Boolean(document.querySelector("#challenge-running")),
+          };
+        })()
+      `);
+      if (pageInfo?.isChallenge) return;
+
+      const cookies = await export1001tlCookiesFromPartition();
+      if (!cookies.length) return;
+
+      capturing = true;
+      const health = await probe1001CookieHealth();
+      if (health.ok) {
+        closedAfterSuccess = true;
+        notify1001tlStatus({ ready: true, reason: health.reason });
+        clearInterval(pollInterval);
+        if (tlVerifyWindow) tlVerifyWindow.close();
+        return;
+      }
+      capturing = false;
+    } catch {
+      capturing = false;
+    }
+  }, 1000);
+
+  tlVerifyWindow.on("closed", async () => {
+    clearInterval(pollInterval);
+    tlVerifyWindow = null;
+    if (closedAfterSuccess) return;
+    try {
+      await export1001tlCookiesFromPartition();
+      const health = await probe1001CookieHealth();
+      notify1001tlStatus({ ready: Boolean(health.ok), reason: health.reason });
+    } catch {
+      notify1001tlStatus({ ready: false, reason: "error" });
+    }
+  });
+});
+
 app.whenReady().then(() => {
   // 会话数据库与 Harness 运行时可写数据写入 userData 目录 (打包后安装目录为只读, 不能使用 cwd 或 app.asar)
   const userDataDir = app.getPath("userData");
   process.env.SESSION_DB_PATH = process.env.SESSION_DB_PATH || path.join(userDataDir, "sessions.db");
   process.env.DSH_HOME = process.env.DSH_HOME || path.join(userDataDir, "dsh-home");
   process.env.YESMUSIC_HARNESS_RUNTIME_DIR = process.env.YESMUSIC_HARNESS_RUNTIME_DIR || path.join(userDataDir, "harness-runtime");
+  fs.mkdirSync(process.env.DSH_HOME, { recursive: true });
+  fs.mkdirSync(process.env.YESMUSIC_HARNESS_RUNTIME_DIR, { recursive: true });
+  process.env.YESMUSIC_1001TL_COOKIE_PATH =
+    process.env.YESMUSIC_1001TL_COOKIE_PATH || path.join(userDataDir, "1001tl_session_cookies.json");
+  migrateLegacy1001tlCookies(userDataDir);
+  export1001tlCookiesFromPartition().catch(() => {});
   const basePort = Number(process.env.PORT ?? 4178);
   server = createAppServer();
   

@@ -2,25 +2,37 @@ process.env.YESMUSIC_SKIP_REAL_SCRAPER = "1";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { searchArtistRecentSets } from "../lib/dj-agent/tracklist-parser.js";
+import { parseArtistSetsFromDjHtml } from "../lib/dj-agent/real-1001tl-scraper.js";
 import { dispatchAgentWorkflow } from "../lib/dj-agent/agent-dispatcher.js";
 
-test("Artist Sets Search: Retrieves recent sets for known DJ (e.g. Culture Shock)", async () => {
-  const result = await searchArtistRecentSets("Culture Shock");
-  assert.equal(result.artist, "Culture Shock");
-  assert.ok(Array.isArray(result.sets));
-  assert.ok(result.sets.length >= 2, "Should return at least 2 candidate sets");
-
-  const firstSet = result.sets[0];
-  assert.ok(firstSet.title.toLowerCase().includes("culture shock"));
-  assert.ok(firstSet.url.includes("1001tracklists.com"));
-  assert.ok(firstSet.trackCount > 0);
+test("Artist Sets Search: DJ page HTML extracts real tracklist URLs", () => {
+  const html = `
+    <div class="bItm action oItm" onclick="window.open('/tracklist/bv5flt1/culture-shock-basspod-edc-las-vegas-united-states-2026-05-15.html', '_self');">
+      <img alt="Culture Shock @ EDC Las Vegas 2026-05-15 Artwork">
+    </div>
+    <div class="bItm" onclick="window.open('/tracklist/dynamic/fake-set.html', '_self');">
+      <img alt="Fake Artwork">
+    </div>
+  `;
+  const sets = parseArtistSetsFromDjHtml(html, "Culture Shock");
+  assert.equal(sets.length, 1);
+  assert.equal(sets[0].url, "https://www.1001tracklists.com/tracklist/bv5flt1/culture-shock-basspod-edc-las-vegas-united-states-2026-05-15.html");
+  assert.match(sets[0].title, /Culture Shock/);
+  assert.equal(sets[0].date, "2026-05-15");
 });
 
-test("Artist Sets Search: General query generates valid candidate sets", async () => {
-  const result = await searchArtistRecentSets("Fisher");
-  assert.equal(result.artist, "Fisher");
-  assert.ok(Array.isArray(result.sets));
-  assert.ok(result.sets.length >= 1);
+test("Artist Sets Search: skipped scraper does not invent curated sets", async () => {
+  const result = await searchArtistRecentSets("Culture Shock", { skipRealScraper: true });
+  assert.equal(result.artist, "Culture Shock");
+  assert.equal(result.source, "unavailable");
+  assert.equal(result.sets.length, 0);
+  assert.equal(JSON.stringify(result).includes("/tracklist/dynamic/"), false);
+});
+
+test("Artist Sets Search: unknown artist does not fall back to Track 01 templates", async () => {
+  const result = await searchArtistRecentSets("Madeon", { skipRealScraper: true });
+  assert.equal(result.source, "unavailable");
+  assert.equal(result.sets.length, 0);
 });
 
 test("Agent Dispatcher: Intent recognition for '帮我看看culture shock最近的演出'", async () => {
@@ -44,16 +56,10 @@ test("Agent Dispatcher: Intent recognition for '帮我看看culture shock最近�
     });
 
     assert.equal(res?.type, "artist_sets");
-    assert.ok(res?.card);
-    assert.equal(res.card.sourceType, "artist_sets_selector");
-    assert.equal(res.card.artist, "Culture Shock");
-    assert.ok(res.card.sets.length >= 2);
-
-    // Check emitted SSE events
-    const cardEvt = events.find((e) => e.type === "card");
-    assert.ok(cardEvt);
-    assert.equal(cardEvt.data.sourceType, "artist_sets_selector");
+    assert.equal(res?.card, null);
+    assert.equal(res.searchResult.source, "unavailable");
     assert.ok(events.some((e) => e.type === "text" && e.data.includes("Culture Shock")));
+    assert.equal(events.some((e) => e.type === "card"), false);
   } finally {
     globalThis.fetch = originalFetch;
   }

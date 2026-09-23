@@ -34,8 +34,10 @@
       "main.js",
       "preload.cjs",
       "server.js",
+      "load-env.js",
       "lib/**/*",
       "harness/*.mjs",
+      "harness/skills/**/*",
       "public/**/*",
       "package.json"
     ],

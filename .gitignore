@@ -8,6 +8,7 @@ release/
 *.zip
 .DS_Store
 .agy-staff/
+.env
 
 # Local runtime databases and cookies
 data/sessions.db

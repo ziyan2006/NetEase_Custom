@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { dispatchAgentWorkflow } from "../lib/dj-agent/agent-dispatcher.js";
+import { dispatchAgentWorkflow, preRouteAgentIntent } from "../lib/dj-agent/agent-dispatcher.js";
 
 function setupMockLlm() {
   const originalFetch = globalThis.fetch;
@@ -74,18 +74,51 @@ test("Agent Dispatcher: Multi-line text setlist extraction & card output", async
 });
 
 test("Agent Dispatcher: Camelot Harmonic Transition detection", async () => {
-  const restoreFetch = setupMockLlm();
-  try {
-    const streamEvents = [];
-    const result = await dispatchAgentWorkflow({
-      message: "推荐适合 8A 的接歌调性",
-      onStream: (ev) => streamEvents.push(ev),
-    });
+  const streamEvents = [];
+  const result = await dispatchAgentWorkflow({
+    message: "推荐适合 8A 的接歌调性",
+    onStream: (ev) => streamEvents.push(ev),
+  });
 
-    assert.equal(result.type, "camelot_analysis");
-    assert.ok(result.content.length > 0);
-    assert.ok(streamEvents.some((e) => e.type === "text" && e.data.includes("Camelot 调性轮盘过渡指南")));
-  } finally {
-    restoreFetch();
-  }
+  assert.equal(result.type, "camelot_analysis");
+  assert.ok(result.content.includes("9A"));
+  assert.ok(result.card?.compatible?.some((item) => item.camelot === "9A"));
+  assert.ok(streamEvents.some((e) => e.type === "card"));
+});
+
+test("Agent Dispatcher: missing API key does not invent a crate", async () => {
+  const events = [];
+  const result = await dispatchAgentWorkflow({
+    message: "帮我排一套 Melodic Techno",
+    harnessRuntime: {},
+    onStream: (ev) => events.push(ev),
+  });
+  assert.equal(result.type, "needs_api_key");
+  assert.ok(events.some((e) => e.type === "text" && e.data.includes("API Key")));
+});
+
+test("Agent Dispatcher: preRoute detects setlist text, camelot, and 1001TL URL", () => {
+  assert.equal(preRouteAgentIntent("01. A - B\n02. C - D").skill, "1001tl_setlist_scraper");
+  assert.equal(preRouteAgentIntent("8A 接什么调").skill, "camelot_harmonic_mixing");
+  assert.equal(
+    preRouteAgentIntent("https://www.1001tracklists.com/tracklist/275yqjmt/example.html").skill,
+    "1001tl_setlist_scraper"
+  );
+  assert.equal(preRouteAgentIntent("帮我查一下chase and status最近的演出").parameters.artist, "chase and status");
+});
+
+test("Agent Dispatcher: with API key, Copilot goes to Harness instead of script preRoute", async () => {
+  const calls = [];
+  const result = await dispatchAgentWorkflow({
+    message: "帮我查一下chase and status最近的演出",
+    config: { apiKey: "sk-test" },
+    harnessRuntime: {
+      run: async (params) => {
+        calls.push(params.message);
+        return { type: "harness_turn", content: "ok", card: { sourceType: "artist_sets_selector", sets: [] } };
+      },
+    },
+  });
+  assert.deepEqual(calls, ["帮我查一下chase and status最近的演出"]);
+  assert.equal(result.type, "harness_turn");
 });

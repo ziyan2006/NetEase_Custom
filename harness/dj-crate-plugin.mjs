@@ -29,7 +29,7 @@ export const inject = ["tools"];
 export function apply(ctx) {
   ctx.tools.register(defineTool({
     name: "search_netease_tracks",
-    description: "在本机网易云音乐目录中查找候选曲目。结果只代表曲库命中，不能视为外部发行页核验。",
+    description: "在本机网易云曲库检索候选曲目。排 Set 前先加载 plan-dj-crate skill。结果只是曲库命中。",
     parameters: {
       query: { type: "string", required: true, description: "艺人、曲名、版本或风格相关的精确检索词" },
       limit: { type: "number", description: "返回曲目数，范围 1 到 20，默认 10" },
@@ -58,6 +58,69 @@ export function apply(ctx) {
     },
     async execute(args, exec) {
       return callBridge("/api/agent/harness/analyze-transition", args, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: "search_1001tl_sets",
+    description: "按官方艺名检索 1001Tracklists 现场列表。调用前先加载 search-live-sets skill。",
+    parameters: {
+      artist: { type: "string", required: true, description: "已确认的官方艺名" },
+    },
+    output: {
+      schema: { type: "string" },
+      render: (_args, value) => [{ type: "text", text: value }],
+    },
+    async execute(args, exec) {
+      return callBridge("/api/agent/harness/search-sets", args, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: "parse_1001tl_setlist",
+    description: "解析 1001Tracklists 链接或粘贴的曲目文本。调用前先加载 parse-setlist skill。",
+    parameters: {
+      url: { type: "string", description: "https://www.1001tracklists.com/tracklist/... 链接" },
+      text: { type: "string", description: "多行现场曲目文本" },
+    },
+    output: {
+      schema: { type: "string" },
+      render: (_args, value) => [{ type: "text", text: value }],
+    },
+    async execute(args, exec) {
+      return callBridge("/api/agent/harness/parse-setlist", args, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: "analyze_camelot",
+    description: "本地 Camelot 引擎。调用前先加载 camelot-mixing skill。",
+    parameters: {
+      key: { type: "string", description: "起始调性，如 8A、Am、F#m" },
+      query: { type: "string", description: "用户原话，用于从文本里提取调性" },
+      toKey: { type: "string", description: "可选目标调性" },
+      fromBpm: { type: "number", description: "可选起始 BPM" },
+      toBpm: { type: "number", description: "可选目标 BPM" },
+    },
+    output: {
+      schema: { type: "string" },
+      render: (_args, value) => [{ type: "text", text: value }],
+    },
+    async execute(args, exec) {
+      return callBridge("/api/agent/harness/analyze-camelot", args, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: "get_1001tl_status",
+    description: "查看 1001Tracklists Cookie 快路径是否可用。调用前可加载 verify-1001tl skill。",
+    parameters: {},
+    output: {
+      schema: { type: "string" },
+      render: (_args, value) => [{ type: "text", text: value }],
+    },
+    async execute(args, exec) {
+      return callBridge("/api/agent/harness/1001tl-status", args || {}, exec.signal);
     },
   }));
 }

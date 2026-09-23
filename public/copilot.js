@@ -109,8 +109,8 @@ export function createPlaylistPreviewCardElement(cardData) {
   card.innerHTML = `
     <div class="card-header-banner">
       <div class="card-title-group">
-        <div class="card-title-text">${cardTitle}</div>
-        <div class="card-subtitle-text">${cardSubtitle}</div>
+        <div class="card-title-text">${escapeHtml(cardTitle)}</div>
+        <div class="card-subtitle-text">${escapeHtml(cardSubtitle)}</div>
       </div>
       <div class="card-badge-pill">
         <span>✨ 320k 匹配 (${totalTracks} 首)</span>
@@ -126,7 +126,7 @@ export function createPlaylistPreviewCardElement(cardData) {
         const songId = t?.id || "";
         const songDuration = formatDuration(t?.durationMs || t?.duration);
         const songPreview = t?.previewUrl || "";
-        const is320k = Boolean(t?.playable320k !== false);
+        const is320k = Boolean(t?.playable320k);
         const safeName = String(songName).replace(/"/g, '&quot;');
         const safeArtist = String(songArtist).replace(/"/g, '&quot;');
         const safeCover = String(songCover).replace(/"/g, '&quot;');
@@ -140,10 +140,10 @@ export function createPlaylistPreviewCardElement(cardData) {
           </div>
           <div class="track-meta">
             <div class="track-name-line">
-              <span class="track-name">${songName}</span>
+              <span class="track-name">${escapeHtml(songName)}</span>
               ${is320k ? '<span class="pill-320k">320K</span>' : ''}
             </div>
-            <div class="track-artist-line">${songArtist} · <span class="track-album">${songAlbum}</span></div>
+            <div class="track-artist-line">${escapeHtml(songArtist)} · <span class="track-album">${escapeHtml(songAlbum)}</span></div>
           </div>
           <div class="track-duration">${songDuration}</div>
           <div class="track-actions">
@@ -336,6 +336,190 @@ export function createPlaylistPreviewCardElement(cardData) {
   return card;
 }
 
+export function createCamelotCardElement(cardData) {
+  const card = document.createElement("div");
+  card.className = "copilot-preview-card";
+  const keys = cardData.compatible || [];
+  const rows = keys.map((item) => `
+    <div class="preview-track-row">
+      <div class="track-num">${escapeHtml(item.camelot || "")}</div>
+      <div class="track-meta">
+        <div class="track-name-line"><span class="track-name">${escapeHtml(item.relation || "")}</span></div>
+        <div class="track-artist-line">${escapeHtml(item.standard || "")} · ${escapeHtml(item.energyEffect || "")}</div>
+      </div>
+    </div>
+  `).join("");
+  card.innerHTML = `
+    <div class="card-header-banner">
+      <div class="card-title-group">
+        <div class="card-title-text">${escapeHtml(cardData.title || "Camelot 调性分析")}</div>
+        <div class="card-subtitle-text">本地引擎结果，未编造曲目</div>
+      </div>
+    </div>
+    <div class="preview-track-list">${rows}</div>
+  `;
+  return card;
+}
+
+function mountCopilotCard(cardData) {
+  if (!cardData) return null;
+  if (cardData.sourceType === "setup_1001tl") {
+    return createSetup1001tlCardElement(cardData);
+  }
+  if (cardData.sourceType === "artist_sets_selector" || cardData.type === "artist_sets_selector") {
+    return createArtistSetsCardElement(cardData);
+  }
+  if (cardData.sourceType === "camelot_analysis") {
+    return createCamelotCardElement(cardData);
+  }
+  return createPlaylistPreviewCardElement(cardData);
+}
+
+function isElectronApp() {
+  return Boolean(window.electronAPI && typeof window.electronAPI.open1001tlVerify === "function");
+}
+
+function isNeteaseLoggedIn() {
+  const cookie = window.getNeteaseCookie ? window.getNeteaseCookie() : (localStorage.getItem("netease_cookie") || "");
+  return Boolean(cookie && cookie.includes("MUSIC_U="));
+}
+
+async function fetch1001tlStatus() {
+  const res = await fetch("/api/agent/1001tl/status");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function start1001tlVerifyFlow() {
+  if (isElectronApp()) {
+    window.electronAPI.open1001tlVerify();
+    return;
+  }
+  const pasteBox = document.getElementById("tl-setup-paste");
+  if (pasteBox) {
+    pasteBox.style.display = "block";
+    document.getElementById("input-1001tl-cookie")?.focus();
+  }
+}
+
+function createSetup1001tlCardElement(cardData) {
+  const card = document.createElement("div");
+  card.className = "copilot-preview-card";
+  card.innerHTML = `
+    <div class="card-header-banner">
+      <div class="card-title-group">
+        <div class="card-title-text">${escapeHtml(cardData.title || "需要验证现场数据源")}</div>
+        <div class="card-subtitle-text">${escapeHtml(cardData.subtitle || "完成后即可走 Cookie 快路径")}</div>
+      </div>
+    </div>
+    <div class="preview-track-list" style="padding: 14px;">
+      <div class="set-desc-text" style="margin-bottom: 12px;">
+        验证 1001Tracklists 官方站点后，检索和解析会复用 Cookie，不再自动启动慢速浏览器。网易云登录是另一回事，只影响 320k 与云端歌单。
+      </div>
+      <button type="button" class="btn btn-primary btn-sm btn-setup-1001tl"><span>去验证</span></button>
+    </div>
+  `;
+  card.querySelector(".btn-setup-1001tl")?.addEventListener("click", () => {
+    start1001tlVerifyFlow();
+  });
+  return card;
+}
+
+async function refreshSetupChecklist(statusOverride = null) {
+  const checklist = document.getElementById("tl-setup-checklist");
+  if (!checklist) return;
+
+  let status = statusOverride;
+  if (!status) {
+    try {
+      status = await fetch1001tlStatus();
+    } catch {
+      status = { ready: false, reason: "error" };
+    }
+  }
+
+  const tlReady = Boolean(status.ready);
+  const neteaseReady = isNeteaseLoggedIn();
+  const rowTl = checklist.querySelector('[data-item="1001tl"]');
+  const rowNetease = checklist.querySelector('[data-item="netease"]');
+  const checkTl = document.getElementById("tl-check-1001tl");
+  const checkNetease = document.getElementById("tl-check-netease");
+  const btnTl = document.getElementById("btn-verify-1001tl");
+  const btnNetease = document.getElementById("btn-setup-netease");
+  const readyEl = document.getElementById("tl-setup-ready");
+  const pasteBox = document.getElementById("tl-setup-paste");
+  const badge = document.getElementById("copilot-welcome-badge");
+
+  if (checkTl) checkTl.textContent = tlReady ? "●" : "○";
+  if (checkNetease) checkNetease.textContent = neteaseReady ? "●" : "○";
+  rowTl?.classList.toggle("is-done", tlReady);
+  rowNetease?.classList.toggle("is-done", neteaseReady);
+
+  if (btnTl) {
+    btnTl.textContent = tlReady ? "重新验证" : (isElectronApp() ? "去验证" : "粘贴 Cookie");
+    btnTl.className = tlReady ? "btn btn-secondary btn-sm" : "btn btn-primary btn-sm";
+  }
+  if (btnNetease) {
+    btnNetease.textContent = neteaseReady ? "已登录" : "去登录";
+    btnNetease.disabled = neteaseReady;
+  }
+
+  if (tlReady && neteaseReady) {
+    if (rowTl) rowTl.style.display = "none";
+    if (rowNetease) rowNetease.style.display = "none";
+    if (readyEl) {
+      readyEl.style.display = "block";
+      readyEl.innerHTML = `现场快路径已启用 · 网易云已登录 <button type="button" class="btn btn-secondary btn-sm" id="btn-reverify-1001tl" style="margin-left:8px;padding:2px 8px;font-size:11px;">重新验证</button>`;
+      readyEl.querySelector("#btn-reverify-1001tl")?.addEventListener("click", () => start1001tlVerifyFlow());
+    }
+    if (pasteBox) pasteBox.style.display = "none";
+  } else {
+    if (rowTl) rowTl.style.display = "flex";
+    if (rowNetease) rowNetease.style.display = "flex";
+    if (readyEl) {
+      if (tlReady) {
+        readyEl.style.display = "block";
+        readyEl.textContent = "现场快路径已启用";
+      } else {
+        readyEl.style.display = "none";
+      }
+    }
+    if (pasteBox && !isElectronApp() && !tlReady) {
+      pasteBox.style.display = "block";
+    }
+  }
+
+  if (badge) {
+    badge.textContent = tlReady ? "🎧 现场快路径已启用" : "🎧 首次使用请先验证现场数据源";
+  }
+}
+
+async function submitPasted1001tlCookie() {
+  const input = document.getElementById("input-1001tl-cookie");
+  const statusEl = document.getElementById("tl-setup-paste-status");
+  const raw = (input?.value || "").trim();
+  if (!raw) {
+    if (statusEl) statusEl.textContent = "请粘贴 guid / cf_clearance 等 Cookie。";
+    return;
+  }
+  try {
+    const res = await fetch("/api/agent/1001tl/cookies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cookieHeader: raw }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "保存失败");
+    if (input) input.value = "";
+    if (statusEl) {
+      statusEl.textContent = data.ready ? "已保存并通过健康检查。" : `已保存，但尚未通过检查（${data.reason || "unknown"}）。`;
+    }
+    await refreshSetupChecklist(data);
+  } catch (err) {
+    if (statusEl) statusEl.textContent = err.message;
+  }
+}
+
 /**
  * 渲染「艺人现场 Setlist 候选列表」富卡片组件
  */
@@ -349,8 +533,8 @@ export function createArtistSetsCardElement(cardData) {
   card.innerHTML = `
     <div class="card-header-banner">
       <div class="card-title-group">
-        <div class="card-title-text">${cardData.title || `🎪 ${artist} 现场演出列表`}</div>
-        <div class="card-subtitle-text">${cardData.subtitle || `找到 ${sets.length} 个代表性 Setlist，点击即可解析`}</div>
+        <div class="card-title-text">${escapeHtml(cardData.title || `${artist} 现场演出列表`)}</div>
+        <div class="card-subtitle-text">${escapeHtml(cardData.subtitle || `找到 ${sets.length} 个 Setlist`)}</div>
       </div>
       <div class="card-badge-pill">
         <span>⚡ ${sets.length} 场候选</span>
@@ -362,7 +546,7 @@ export function createArtistSetsCardElement(cardData) {
         const setTitle = s.title || s.name || "Live Set";
         const setVenue = s.venue || s.location || "";
         const setDate = s.date || "Recent";
-        const setTracks = s.trackCount || 35;
+        const setTracks = Number(s.trackCount) || 0;
         const setUrl = s.url || "";
         const setDesc = s.description || "";
         const safeTitleAttr = String(setTitle).replace(/"/g, '&quot;');
@@ -372,14 +556,14 @@ export function createArtistSetsCardElement(cardData) {
           <div class="set-item-left">
             <div class="set-title-row">
               <span class="set-index-tag">#${idx + 1}</span>
-              <span class="set-name">${setTitle}</span>
+              <span class="set-name">${escapeHtml(setTitle)}</span>
             </div>
             <div class="set-meta-row">
-              <span class="meta-tag">📅 ${setDate}</span>
-              ${setVenue ? `<span class="meta-tag">🎪 ${setVenue}</span>` : ''}
-              <span class="meta-tag">🎵 约 ${setTracks} 首曲目</span>
+              <span class="meta-tag">📅 ${escapeHtml(String(setDate))}</span>
+              ${setVenue ? `<span class="meta-tag">🎪 ${escapeHtml(setVenue)}</span>` : ''}
+              ${setTracks > 0 ? `<span class="meta-tag">🎵 ${setTracks} 首曲目</span>` : ''}
             </div>
-            ${setDesc ? `<div class="set-desc-text">${setDesc}</div>` : ''}
+            ${setDesc ? `<div class="set-desc-text">${escapeHtml(setDesc)}</div>` : ''}
           </div>
           <div class="set-item-right">
             <button class="btn btn-primary btn-sm btn-parse-this-set" data-url="${setUrl}" data-title="${safeTitleAttr}">
@@ -402,14 +586,14 @@ export function createArtistSetsCardElement(cardData) {
       btn.disabled = true;
       btn.innerHTML = "<span>⏳ 正在解析...</span>";
 
-      if (currentSet && Array.isArray(currentSet.tracks) && currentSet.tracks.length > 0) {
-        // 直接将该演出的完整曲目清单发送到对话中进行 320k 匹配与生成预览卡片
-        const tracklistPrompt = `请为以下现场演出生成网易云 320k 歌单：\n【${targetTitle}】\n` + currentSet.tracks.map((t, i) => `${String(i + 1).padStart(2, "0")}. ${t}`).join("\n");
-        sendCopilotMessage(tracklistPrompt);
-      } else if (targetUrl && !targetUrl.includes("/dynamic/")) {
+      const isRealUrl = /^https?:\/\/(?:www\.)?1001tracklists\.com\/tracklist\//i.test(targetUrl)
+        && !/\/tracklist\/dynamic\//i.test(targetUrl);
+      if (isRealUrl) {
         sendCopilotMessage(targetUrl);
       } else {
-        sendCopilotMessage(`请解析现场演出并生成网易云歌单：${targetTitle}`);
+        btn.disabled = false;
+        btn.innerHTML = "<span>⚡ 解析并生成歌单</span>";
+        alert("没有可用的 1001Tracklists 原站链接，无法解析。请粘贴真实现场 URL 或曲目文本。");
       }
     });
   });
@@ -504,9 +688,7 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
 
   // 如果有预览卡片
   if (cardData) {
-    const cardEl = (cardData.sourceType === "artist_sets_selector" || cardData.type === "artist_sets_selector")
-      ? createArtistSetsCardElement(cardData)
-      : createPlaylistPreviewCardElement(cardData);
+    const cardEl = mountCopilotCard(cardData);
     contentArea.appendChild(cardEl);
   }
 
@@ -678,13 +860,7 @@ export function appendCopilotMessage({ role, content = "", reasoning = "", cardD
     },
     appendCard: (card) => {
       if (!card) return;
-      const existing = contentArea.querySelector(".copilot-preview-card, .copilot-artist-sets-card");
-      if (existing) existing.remove();
-
-      const cardEl = (card.sourceType === "artist_sets_selector" || card.type === "artist_sets_selector")
-        ? createArtistSetsCardElement(card)
-        : createPlaylistPreviewCardElement(card);
-
+      const cardEl = mountCopilotCard(card);
       if (cardEl) {
         contentArea.appendChild(cardEl);
         container.scrollTop = container.scrollHeight;
@@ -990,6 +1166,14 @@ export async function initCopilot() {
   window.__copilotInitialized = true;
 
   const inputEl = document.getElementById("copilot-input");
+  const focusCopilotInput = (evt) => {
+    if (!inputEl) return;
+    if (evt.target === inputEl) return;
+    if (evt.target.closest("button, input, select, a, .model-reasoning-dropdown-wrapper")) return;
+    inputEl.focus();
+  };
+  document.querySelector(".copilot-input-wrapper")?.addEventListener("pointerdown", focusCopilotInput);
+  document.querySelector(".copilot-input-box")?.addEventListener("click", focusCopilotInput);
   const sendBtn = document.getElementById("btn-copilot-send");
   const stopBtn = document.getElementById("btn-copilot-stop");
   const settingsBtn = document.getElementById("btn-copilot-settings");
@@ -1004,6 +1188,25 @@ export async function initCopilot() {
   } catch (err) {
     console.warn("[Copilot Session Init Warning]:", err.message);
   }
+
+  document.getElementById("btn-verify-1001tl")?.addEventListener("click", () => {
+    start1001tlVerifyFlow();
+  });
+  document.getElementById("btn-setup-netease")?.addEventListener("click", () => {
+    if (window.showQrModal) window.showQrModal();
+  });
+  document.getElementById("btn-paste-1001tl-cookie")?.addEventListener("click", () => {
+    submitPasted1001tlCookie();
+  });
+  window.addEventListener("netease-auth-changed", () => {
+    refreshSetupChecklist();
+  });
+  if (window.electronAPI && typeof window.electronAPI.on1001tlCookiesCaptured === "function") {
+    window.electronAPI.on1001tlCookiesCaptured((payload) => {
+      refreshSetupChecklist(payload);
+    });
+  }
+  refreshSetupChecklist().catch(() => {});
 
   // 模型 & 推理强度 Popover 与胶囊 Trigger (参考图 UI)
   const pillTrigger = document.getElementById("model-reasoning-pill-trigger");

@@ -5,7 +5,13 @@ import {
   camelotToStandardKey,
   getCompatibleKeys,
   analyzeTransition,
+  extractCamelotKeyFromText,
 } from "../lib/dj-agent/camelot-engine.js";
+
+test("Camelot Key Engine: extract key from natural language", () => {
+  assert.equal(extractCamelotKeyFromText("推荐适合接在 126 BPM 8A 后的方案"), "8A");
+  assert.equal(extractCamelotKeyFromText("hello"), null);
+});
 
 test("Camelot Key Engine: Key Normalization", () => {
   assert.equal(normalizeCamelotKey("8A"), "8A");

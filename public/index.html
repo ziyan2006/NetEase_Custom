@@ -62,7 +62,7 @@
       </aside>
 
       <!-- 右侧主内容区 Workspace -->
-      <main class="main-workspace" style="padding-bottom: 110px;">
+      <main class="main-workspace">
         <!-- 顶栏 Navbar -->
         <header class="top-header">
           <h1 id="header-page-title" class="page-title">云端歌单导出</h1>
@@ -116,14 +116,42 @@
                 <div id="copilot-messages" class="copilot-messages-container">
                   <!-- 初始欢迎卡片与推荐 Prompt -->
                   <div class="copilot-welcome-card">
-                    <div class="welcome-badge">🎧 DJ 智能助手已就绪</div>
+                    <div class="welcome-badge" id="copilot-welcome-badge">🎧 DJ 智能助手已就绪</div>
+                    <div id="tl-setup-checklist" class="tl-setup-checklist">
+                      <div class="tl-setup-title">首次设置</div>
+                      <div class="tl-setup-row" data-item="1001tl">
+                        <span class="tl-setup-check" id="tl-check-1001tl">○</span>
+                        <div class="tl-setup-copy">
+                          <div class="tl-setup-label">验证 1001Tracklists 现场数据源</div>
+                          <div class="tl-setup-hint">用于艺人检索和现场页解析的 Cookie 快路径</div>
+                        </div>
+                        <button type="button" id="btn-verify-1001tl" class="btn btn-primary btn-sm">去验证</button>
+                      </div>
+                      <div class="tl-setup-row" data-item="netease">
+                        <span class="tl-setup-check" id="tl-check-netease">○</span>
+                        <div class="tl-setup-copy">
+                          <div class="tl-setup-label">登录网易云（可选）</div>
+                          <div class="tl-setup-hint">用于 320k 音质判断和云端建歌单，与现场数据源独立</div>
+                        </div>
+                        <button type="button" id="btn-setup-netease" class="btn btn-secondary btn-sm">去登录</button>
+                      </div>
+                      <div id="tl-setup-ready" class="tl-setup-ready" style="display: none;"></div>
+                      <div id="tl-setup-paste" class="tl-setup-paste" style="display: none;">
+                        <div class="tl-setup-hint">当前不是桌面版窗口。可粘贴 1001Tracklists Cookie（高级）：</div>
+                        <div class="tl-setup-paste-row">
+                          <input id="input-1001tl-cookie" type="password" class="input-box" placeholder="guid=...; cf_clearance=..." />
+                          <button type="button" id="btn-paste-1001tl-cookie" class="btn btn-secondary btn-sm">保存并检查</button>
+                        </div>
+                        <div id="tl-setup-paste-status" class="tl-setup-hint"></div>
+                      </div>
+                    </div>
                     <h3 class="welcome-heading">有什么可以协助您的 DJ 工作流？</h3>
                     <p class="welcome-desc">
                       支持直接发送 1001Tracklists 现场链接自动还原歌单、一键检索真实曲目、Camelot 调性过渡建议或自然语言选曲排歌。
                     </p>
                     <div class="copilot-quick-pills">
-                      <button class="quick-pill-btn" data-prompt="https://www.1001tracklists.com/tracklist/275yqjmt/martin-garrix-mainstage-tomorrowland-belgium-weekend-1-2023-07-22.html">
-                        🎸 解析 1001TL 现场 Setlist
+                      <button class="quick-pill-btn" data-prompt="请粘贴 1001Tracklists 现场链接，或直接粘贴多行「艺人 - 曲名」文本。失效链接不会被编造成歌单。">
+                        🎸 解析 1001TL / 粘贴 Setlist
                       </button>
                       <button class="quick-pill-btn" data-prompt="帮我排一套本周 Melodic Techno 风格的 DJ Set">
                         🌌 Melodic Techno 排 Set
@@ -149,6 +177,9 @@
                       class="copilot-textarea"
                       placeholder="输入 1001Tracklists 链接、风格排歌指令、或调性过渡分析... (Shift+Enter 换行，Enter 发送)"
                       rows="1"
+                      tabindex="0"
+                      autocomplete="off"
+                      spellcheck="false"
                     ></textarea>
                     <div class="copilot-input-controls">
                       <span id="copilot-status-indicator" class="copilot-indicator" style="display: none;">

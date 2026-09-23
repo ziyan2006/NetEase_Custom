@@ -38,21 +38,28 @@
   padding: 0;
 }
 
+html, body {
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: radial-gradient(circle at 15% 15%, #1e1926 0%, #121215 45%, #0d0d10 100%);
   color: var(--text-primary);
-  min-height: 100vh;
-  overflow-x: hidden;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
-/* App Container Layout */
+/* App Container Layout — pin to the window so chat never creates a page scroll */
 .app-layout {
   display: flex;
-  min-height: 100vh;
-  width: 100vw;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Sidebar Styles (YesPlayMusic Left Bar) */
@@ -229,7 +236,11 @@ body {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 32px 40px 60px;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 24px 40px 96px;
+  box-sizing: border-box;
 }
 
 /* Header Navbar */
@@ -237,7 +248,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 32px;
+  margin-bottom: 20px;
+  flex-shrink: 0;
 }
 
 .page-title {
@@ -315,8 +327,16 @@ body {
 }
 
 .view-panel.active {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   animation: fadeIn 0.3s ease-out;
+}
+
+#tab-copilot.view-panel.active {
+  overflow: hidden;
 }
 
 @keyframes fadeIn {
@@ -856,6 +876,11 @@ select.input-box option {
   justify-content: space-between;
   padding: 0 28px;
   box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.global-player-bar > * {
+  pointer-events: auto;
 }
 
 .player-left {
@@ -1018,8 +1043,10 @@ select.input-box option {
 .copilot-container {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 180px);
+  flex: 1;
+  min-height: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .copilot-header-bar {
@@ -1036,20 +1063,28 @@ select.input-box option {
   display: flex;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
 }
 
 .copilot-main {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   padding: 0 20px;
+  overflow: hidden;
 }
 
 /* ---------- 左侧会话栏 (Codex 风格) ---------- */
 .session-sidebar {
   width: 264px;
   flex-shrink: 0;
+  align-self: stretch;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--border-color);
@@ -1521,7 +1556,9 @@ select.input-box option {
 
 /* Messages Scrollable Area */
 .copilot-messages-container {
-  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 16px 8px 20px;
   display: flex;
@@ -1531,17 +1568,38 @@ select.input-box option {
   max-width: 900px;
   width: 100%;
   margin: 0 auto;
+  scrollbar-width: thin;
+  scrollbar-color: #000000 transparent;
+  isolation: isolate;
+  contain: paint;
+}
+
+.copilot-messages-container::-webkit-scrollbar {
+  width: 8px;
+  height: 0;
+}
+
+.copilot-messages-container::-webkit-scrollbar-track {
+  background: #1c1c24;
+}
+
+.copilot-messages-container::-webkit-scrollbar-thumb {
+  background: #333333;
+  border-radius: 4px;
+}
+
+.copilot-messages-container::-webkit-scrollbar-corner {
+  background: #1c1c24;
 }
 
 /* Welcome Card */
 .copilot-welcome-card {
-  background: linear-gradient(145deg, rgba(30, 30, 42, 0.8), rgba(20, 20, 28, 0.9));
+  background: linear-gradient(145deg, #1e1e2a, #14141c);
   border: 1px solid rgba(234, 68, 83, 0.25);
   border-radius: var(--radius-lg);
   padding: 28px;
   text-align: center;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(20px);
 }
 
 .welcome-badge {
@@ -1554,6 +1612,91 @@ select.input-box option {
   border-radius: var(--radius-full);
   margin-bottom: 12px;
   border: 1px solid rgba(234, 68, 83, 0.3);
+}
+
+.tl-setup-checklist {
+  text-align: left;
+  max-width: 620px;
+  margin: 0 auto 20px auto;
+  padding: 12px 14px;
+  border: 1px solid rgba(234, 68, 83, 0.18);
+  border-radius: var(--radius-lg);
+  background: rgba(12, 12, 18, 0.45);
+}
+
+.tl-setup-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.tl-setup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.tl-setup-row + .tl-setup-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tl-setup-check {
+  width: 22px;
+  text-align: center;
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.tl-setup-row.is-done .tl-setup-check {
+  color: #4ade80;
+}
+
+.tl-setup-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.tl-setup-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.tl-setup-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.tl-setup-ready {
+  font-size: 12px;
+  font-weight: 700;
+  color: #4ade80;
+  padding: 6px 2px;
+}
+
+.tl-setup-paste {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.tl-setup-paste-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.tl-setup-paste-row .input-box {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  font-size: 11px;
 }
 
 .welcome-heading {
@@ -1603,6 +1746,7 @@ select.input-box option {
   display: flex;
   gap: 14px;
   max-width: 100%;
+  min-width: 0;
   animation: fadeIn 0.25s ease-out;
 }
 
@@ -1643,9 +1787,11 @@ select.input-box option {
 
 .message-content-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-x: hidden;
 }
 
 .bubble-user .message-text-body {
@@ -1668,6 +1814,12 @@ select.input-box option {
   line-height: 1.7;
   backdrop-filter: blur(12px);
   box-shadow: var(--shadow-card);
+}
+
+.message-text-body {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .message-text-body h1, .message-text-body h2, .message-text-body h3 {
@@ -1720,6 +1872,8 @@ select.input-box option {
 /* Copilot Table */
 .copilot-table {
   width: 100%;
+  max-width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   margin: 12px 0;
   font-size: 12px;
@@ -1737,6 +1891,7 @@ select.input-box option {
   padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   color: var(--text-secondary);
+  word-break: break-word;
 }
 
 /* Reasoning Accordion */
@@ -1777,6 +1932,9 @@ select.input-box option {
   padding: 20px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
   animation: fadeIn 0.3s ease-out;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .card-header-banner {
@@ -1938,23 +2096,30 @@ select.input-box option {
 
 /* Copilot Floating Input Area */
 .copilot-input-wrapper {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  isolation: isolate;
   margin-top: 12px;
-  padding-bottom: 14px;
+  padding-bottom: 8px;
   max-width: 900px;
   width: 100%;
   margin-left: auto;
   margin-right: auto;
+  -webkit-app-region: no-drag;
 }
 
 .copilot-input-box {
-  background: rgba(24, 24, 32, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: #1c1c24;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--radius-lg);
   padding: 10px 14px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   transition: var(--transition-fast);
+  cursor: text;
+  position: relative;
+  z-index: 1;
+  -webkit-app-region: no-drag;
 }
 
 .copilot-input-box:focus-within {
@@ -1964,15 +2129,32 @@ select.input-box option {
 
 .copilot-textarea {
   width: 100%;
-  background: transparent;
+  display: block;
+  position: relative;
+  z-index: 2;
+  background: #1c1c24;
   border: none;
   outline: none;
-  color: var(--text-primary);
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  caret-color: #ffffff;
+  color-scheme: dark;
   font-size: 13px;
   line-height: 1.5;
   resize: none;
+  min-height: 40px;
   max-height: 120px;
   font-family: inherit;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.copilot-textarea::placeholder {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+  opacity: 1;
 }
 
 .copilot-input-controls {

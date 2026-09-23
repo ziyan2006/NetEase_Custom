@@ -2,9 +2,11 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { buildYesMusicOverlay } from "./yesmusic-overlay.mjs";
 
 const harnessDirectory = dirname(fileURLToPath(import.meta.url));
 const pluginPath = join(harnessDirectory, "dj-crate-plugin.mjs");
+const skillsDir = join(harnessDirectory, "skills");
 const profileHome = process.env.DSH_HOME || join(harnessDirectory, ".dsh-home");
 const runtimeDirectory = process.env.YESMUSIC_HARNESS_RUNTIME_DIR || join(profileHome, "runtime");
 const overlayPath = join(runtimeDirectory, "yesmusic-dj-crate.overlay.yml");
@@ -20,33 +22,10 @@ await mkdir(runtimeDirectory, { recursive: true });
 const pluginPathForYaml = pathToFileURL(pluginPath).href;
 await writeFile(
   overlayPath,
-  [
-    "- insert:",
-    "    - id: yesmusic-dj-crate-tools",
-    `      name: ${JSON.stringify(pluginPathForYaml)}`,
-    "- id: tool-bash",
-    "  disabled: true",
-    "- id: tool-pwsh",
-    "  disabled: true",
-    "- id: tool-fs",
-    "  disabled: true",
-    "- id: tool-fs-search",
-    "  disabled: true",
-    "- id: tool-web",
-    "  disabled: true",
-    "- id: web-search-deepseek",
-    "  disabled: true",
-    "- id: tool-skill",
-    "  disabled: true",
-    "- id: skill-filesystem",
-    "  disabled: true",
-    "- id: tool-subagent",
-    "  disabled: true",
-    "- id: tool-subagent-fork",
-    "  disabled: true",
-    "- id: tool-subagent-control",
-    "  disabled: true",
-  ].join("\n") + "\n",
+  buildYesMusicOverlay({
+    pluginPath: pluginPathForYaml,
+    skillsDir,
+  }),
   "utf8",
 );
 
@@ -59,6 +38,7 @@ const child = spawn(
     env: {
       ...process.env,
       DSH_HOME: profileHome,
+      DSH_BUNDLED_SKILL_DIR: skillsDir,
       YESMUSIC_AGENT_BRIDGE_URL: process.env.YESMUSIC_AGENT_BRIDGE_URL || defaultBridgeUrl,
     },
   },

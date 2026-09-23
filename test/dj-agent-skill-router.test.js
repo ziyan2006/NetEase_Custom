@@ -92,8 +92,7 @@ describe("纯 LLM Skill 注册中心与渐进式调度测试", () => {
 
     assert.ok(result);
     assert.strictEqual(result.type, "artist_sets");
-    assert.ok(receivedCard);
-    assert.strictEqual(receivedCard.sourceType, "artist_sets_selector");
+    assert.equal(receivedCard, null);
   });
 
   it("场景 2 (调性过渡): 调性咨询应自主决策并调用 camelot_harmonic_mixing", async () => {
@@ -107,13 +106,14 @@ describe("纯 LLM Skill 注册中心与渐进式调度测试", () => {
 
     assert.ok(result);
     assert.strictEqual(result.type, "camelot_analysis");
-    assert.ok(outputText.length > 20);
+    assert.ok(outputText.includes("9A"));
   });
 
   it("场景 4 (自由对话): 电子音乐文化与通用咨询应自主决策并调用 general_dj_chat", async () => {
     let outputText = "";
     const result = await dispatchAgentWorkflow({
       message: "聊聊你对当代 Afterlife 风格视觉现场与未来电子音乐发展的看法",
+      config: { apiKey: "sk-test" },
       onStream: (event) => {
         if (event.type === "text") outputText += event.data;
       },
