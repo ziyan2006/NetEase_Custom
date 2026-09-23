@@ -184,7 +184,7 @@ export const yesmusicApi = {
     return text(first.url) || null;
   },
 
-  async exportPlaylist(input: { id: string; name: string; outputRoot: string }, onEvent: (event: PlaylistExportEvent) => void, signal?: AbortSignal): Promise<void> {
+  async exportPlaylist(input: { id: string; name: string; outputRoot: string; jobId?: string; resume?: boolean }, onEvent: (event: PlaylistExportEvent) => void, signal?: AbortSignal): Promise<void> {
     const cookie = getNeteaseCookie();
     if (!cookie) throw new NeteaseApiError("请先登录网易云账号，再导出歌单。", 401);
     const response = await fetch("/api/playlist/export", {

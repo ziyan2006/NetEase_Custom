@@ -64,7 +64,14 @@ let wallpaperEffects: WallpaperEffects | undefined;
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
   document.querySelector<T>(selector)!;
 import { logo, brandHeading } from "./brand";
-import { clearNeteaseCookie, getNeteaseCookie, saveNeteaseCookie, yesmusicApi, NeteaseApiError, type NeteasePlaylist } from "./yesmusic-api";
+import { clearNeteaseCookie, getNeteaseCookie, saveNeteaseCookie, yesmusicApi, type NeteasePlaylist } from "./yesmusic-api";
+import { cookieFromQrPayload, DjAuthAdapter } from "./dj-auth.js";
+const djAuthAdapter = new DjAuthAdapter({
+  getPlaylists: () => yesmusicApi.getPlaylists(),
+  getCookie: getNeteaseCookie,
+  saveCookie: saveNeteaseCookie,
+  clearCookie: clearNeteaseCookie,
+});
 
 $("#stage").innerHTML = `
   <div id="three-scene" class="three-scene"></div>
@@ -266,25 +273,35 @@ let resumeSelection = -1;
 let viewer: ModelViewer | undefined;
 const accessLog: { id: string; time: string }[] = [];
 const columnMemory = archiveColumns.map((_, lane) => columnFiles(lane)[0]);
-async function startPlaylistExport(playlist: NeteasePlaylist, outputRoot: string, onState: (state: ReturnType<typeof createPlaylistExportState>) => void) {
+let latestPlaylistExportState: ReturnType<typeof createPlaylistExportState> | null = null;
+function restorePlaylistExportVisual(state: ReturnType<typeof createPlaylistExportState>) {
+  latestPlaylistExportState = state;
+  const stage = $("#stage");
+  stage.dataset.playlistExporting = "true";
+  if (state.phase === "done" || state.phase === "error") stage.dataset.playlistExportComplete = "true";
+  else delete stage.dataset.playlistExportComplete;
+  const exportIndex = records.findIndex(record => record.en === "EXPORT PROGRESS");
+  if (ready && exportIndex >= 0) select(exportIndex);
+  scene?.setExportProgress(toSceneExportProgress(state));
+}
+async function startPlaylistExport(playlist: NeteasePlaylist, outputRoot: string, onState: (state: ReturnType<typeof createPlaylistExportState>) => void, jobId: string, resume: boolean, initialState: ReturnType<typeof createPlaylistExportState>) {
   const exportIndex = records.findIndex(record => record.en === "EXPORT PROGRESS");
   if (exportIndex < 0) throw new Error("没有找到歌单导出进度档案。");
   const stage = $("#stage");
-  stage.dataset.playlistExporting = "true";
-  delete stage.dataset.playlistExportComplete;
-  let state = createPlaylistExportState(playlist, "running");
-  select(exportIndex);
-  scene?.setExportProgress(toSceneExportProgress(state));
+  let state = initialState;
+  restorePlaylistExportVisual(state);
   onState(state);
   try {
-    await yesmusicApi.exportPlaylist({ id: playlist.id, name: playlist.name, outputRoot }, event => {
+    await yesmusicApi.exportPlaylist({ id: playlist.id, name: playlist.name, outputRoot, jobId, resume }, event => {
       state = reducePlaylistExportEvent(state, event);
+      latestPlaylistExportState = state;
       if (state.phase === "done" || state.phase === "error") stage.dataset.playlistExportComplete = "true";
       scene?.setExportProgress(toSceneExportProgress(state));
       onState(state);
     });
   } catch (error) {
     if (state.phase !== "error") state = failPlaylistExport(state, error);
+    latestPlaylistExportState = state;
     stage.dataset.playlistExportComplete = "true";
     scene?.setExportProgress(toSceneExportProgress(state));
     onState(state);
@@ -728,42 +745,33 @@ function publishDjAccount(authenticated: boolean, userId = "") {
   updateDjAccountButton();
   window.dispatchEvent(new CustomEvent("yesmusic-account-updated", { detail: { authenticated, userId } }));
 }
-function normalizeCookieInput(input: string): string {
-  const value = input.trim();
-  if (!value) return "";
-  if (/(?:^|;\s*)MUSIC_U=/i.test(value)) return value;
-  if (value.includes("=")) return "";
-  return `MUSIC_U=${value}`;
-}
 async function validateDjCookie(candidate = getNeteaseCookie()) {
-  const cookie = normalizeCookieInput(candidate);
-  if (!cookie) {
-    djAuthStatus = "guest";
-    djAuthMessage = "请提供有效的 MUSIC_U 凭据。";
-    updateDjAccountButton();
-    updateDjAccountModal();
-    return false;
-  }
   stopDjQrPolling();
   djAuthStatus = "checking";
   djAuthMessage = "正在向网易云验证账号并读取歌单权限…";
   djAuthUserId = "";
-  saveNeteaseCookie(cookie);
   updateDjAccountButton();
   updateDjAccountModal();
   try {
-    const account = await yesmusicApi.getPlaylists();
-    if (!account.userId) throw new NeteaseApiError("网易云未返回有效账号信息，请重新登录。", 401);
+    const account = await djAuthAdapter.validate(candidate);
+    if (account.status === "superseded") return false;
+    if (account.status === "invalid") {
+      djAuthStatus = "guest";
+      djAuthMessage = account.message;
+      publishDjAccount(false);
+      updateDjAccountButton();
+      updateDjAccountModal();
+      return false;
+    }
     djAuthStatus = "authenticated";
     djAuthUserId = account.userId;
-    djAuthMessage = `账号验证成功，已读取 ${account.playlists.length} 个云端歌单。`;
+    djAuthMessage = `账号验证成功，已读取 ${account.playlistCount} 个云端歌单。`;
     publishDjAccount(true, account.userId);
     updateDjAccountButton();
     updateDjAccountModal();
     return true;
   } catch (error) {
-    const invalid = error instanceof NeteaseApiError && error.status === 401;
-    if (invalid) clearNeteaseCookie();
+    const invalid = error instanceof Error && "status" in error && Number((error as Error & { status?: unknown }).status) === 401;
     djAuthStatus = invalid ? "expired" : "guest";
     djAuthMessage = error instanceof Error ? error.message : "账号验证失败，请重试。";
     publishDjAccount(false);
@@ -771,17 +779,6 @@ async function validateDjCookie(candidate = getNeteaseCookie()) {
     updateDjAccountModal();
     return false;
   }
-}
-function qrCookieFrom(payload: Record<string, unknown>): string {
-  if (typeof payload.cookie === "string") return payload.cookie;
-  if (typeof payload.cookies === "string") return payload.cookies;
-  if (Array.isArray(payload.cookies)) {
-    return payload.cookies.map(item => {
-      const cookie = item as { name?: unknown; value?: unknown };
-      return typeof cookie.name === "string" && typeof cookie.value === "string" ? `${cookie.name}=${cookie.value}` : "";
-    }).filter(Boolean).join("; ");
-  }
-  return "";
 }
 async function startDjQrLogin() {
   stopDjQrPolling();
@@ -817,7 +814,7 @@ async function pollDjQrLogin() {
     } else if (code === 801) djQrStatus = "等待扫码…";
     else if (code === 802) djQrStatus = "已扫码，请在手机上确认登录。";
     else if (code === 803) {
-      const cookie = qrCookieFrom(payload);
+      const cookie = cookieFromQrPayload(payload);
       stopDjQrPolling();
       if (!cookie) djQrStatus = "网易云未返回可验证的 Cookie。请粘贴 MUSIC_U，或改用 Electron 官方登录。";
       else {
@@ -838,19 +835,13 @@ async function pollDjQrLogin() {
 }
 async function submitDjManualCookie() {
   const input = $("#dj-manual-cookie") as HTMLInputElement;
-  const cookie = normalizeCookieInput(input.value);
-  if (!cookie) {
-    djAuthMessage = "请粘贴 MUSIC_U 或完整的网易云 Cookie。";
-    updateDjAccountModal();
-    input.focus();
-    return;
-  }
+  const value = input.value;
   input.value = "";
-  await validateDjCookie(cookie);
+  await validateDjCookie(value);
 }
 function logoutDjAccount() {
   stopDjQrPolling();
-  clearNeteaseCookie();
+  djAuthAdapter.logout();
   djAuthStatus = "guest";
   djAuthUserId = "";
   djAuthMessage = "已退出网易云账号。";
@@ -1394,7 +1385,11 @@ async function start() {
     }
     savePrefs();
     ready = true;
-    select(0);
+    if (latestPlaylistExportState) {
+      const exportIndex = records.findIndex(record => record.en === "EXPORT PROGRESS");
+      if (exportIndex >= 0) select(exportIndex);
+      scene?.setExportProgress(toSceneExportProgress(latestPlaylistExportState));
+    } else select(0);
     if (entry) entry.ready();
     else {
       if (isWallpaper) {
@@ -1557,7 +1552,10 @@ if (isWallpaper) {
     setDjPreview(track ? { title: track.title, artist: track.artists.join(" / "), album: track.album, coverUrl: track.coverUrl } : null);
     const trackIndex = records.findIndex(record => record.en === "TRACK PREVIEW");
     if (trackIndex >= 0 && ready && !modal) select(trackIndex);
-  }, (playlist, outputRoot, onState) => startPlaylistExport(playlist, outputRoot, onState));
+  }, (playlist, outputRoot, onState, jobId, resume, initialState) => startPlaylistExport(playlist, outputRoot, onState, jobId, resume, initialState), state => restorePlaylistExportVisual(state));
+  if (isDjPrototype && (djAuthStatus as string) === "authenticated") {
+    window.dispatchEvent(new CustomEvent("yesmusic-account-updated", { detail: { authenticated: true, userId: djAuthUserId } }));
+  }
   playground = new ArchivePlayground($("#stage"), () => scene,
     () => ({ enabled: !!workbench?.enabled && mode === "archive" && ready, paused: Boolean(modal) || modalClosing || Boolean(wallpaperHost()?.paused) || document.hidden, reduced: prefs.reduced }),
     value => { musicSuppressed = value; configureAudio(); }, () => audio.play("tick"));
@@ -1572,7 +1570,7 @@ if (isDjPrototype) {
   window.electronAPI?.onCookieCaptured?.(cookie => { void validateDjCookie(cookie); });
   window.addEventListener("yesmusic-auth-invalid", event => {
     const detail = (event as CustomEvent<{ message?: string }>).detail;
-    clearNeteaseCookie();
+    djAuthAdapter.logout();
     djAuthStatus = "expired";
     djAuthUserId = "";
     djAuthMessage = detail?.message || "网易云登录已失效，请重新登录。";

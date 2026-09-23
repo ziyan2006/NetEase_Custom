@@ -21,6 +21,16 @@ const names = isDjPrototype
   : ["时间日期", "今日事项", "重要日程", "正在播放", "专注计时"];
 const capabilityKeys = ["enabletime", "enabletasks", "enableevent", "enablemedia", "enablefocus"];
 const key = isDjPrototype ? "yesmusic-dj-prototype-v1" : "rhine-workbench-v1";
+const playlistExportStorageKey = "yesmusic-playlist-export-v1";
+const playerStorageKey = "yesmusic-dj-player-v1";
+type PersistedPlaylistExport = {
+  version: 1;
+  jobId: string;
+  accountUserId: string;
+  outputRoot: string;
+  playlist: Pick<NeteasePlaylist, "id" | "name" | "coverUrl" | "trackCount">;
+  state: PlaylistExportState;
+};
 export class Workbench {
   enabled = false;
   private root: HTMLElement;
@@ -45,6 +55,7 @@ export class Workbench {
   private playerState: DjPlayerState = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
   private renderedPlayerKey = "";
   private playerTrackId = "";
+  private playerSnapshotWriteAt = 0;
   private playerPickerOpen = false;
   private seekingPlayer = false;
   private playerActionNotice = "";
@@ -66,6 +77,8 @@ export class Workbench {
   private playlistDrawerNotice = "";
   private playlistExportConfirm = false;
   private playlistExportState: PlaylistExportState | null = null;
+  private playlistExportSnapshot: PersistedPlaylistExport | null = null;
+  private exportResumeInFlight = false;
   private playlistExportConfirmTrigger?: HTMLButtonElement;
   private onlineSearchQuery = "";
   private onlineSearchSubmitted = false;
@@ -86,7 +99,7 @@ export class Workbench {
   private renderedDate = "";
   private exitAnimation?: Animation;
   private visibility: WorkbenchVisibility = defaultWorkbenchVisibility();
-  constructor(private stage: HTMLElement, private onMode: () => void, private onLane: (lane: number) => void, private onTrackOpen: () => void, private onTrackStep: (track: NeteaseTrack | null) => void, private onPlaylistExport: (playlist: NeteasePlaylist, outputRoot: string, onState: (state: PlaylistExportState) => void) => Promise<void> | void = () => {}) {
+  constructor(private stage: HTMLElement, private onMode: () => void, private onLane: (lane: number) => void, private onTrackOpen: () => void, private onTrackStep: (track: NeteaseTrack | null) => void, private onPlaylistExport: (playlist: NeteasePlaylist, outputRoot: string, onState: (state: PlaylistExportState) => void, jobId: string, resume: boolean, initialState: PlaylistExportState) => Promise<void> | void = () => {}, private onRestorePlaylistExport: (state: PlaylistExportState) => void = () => {}) {
     try {
       const saved = JSON.parse(localStorage.getItem(key) ?? "null");
       this.timer = restoreTimer(saved?.timer);
@@ -105,10 +118,12 @@ export class Workbench {
       <nav class="wb-nav" aria-label="工作台功能">${names.map((n, i) => `<button data-wb-lane="${i}" aria-pressed="false"${isDjPrototype && i <= 2 ? ' aria-controls="dj-playlist-drawer" aria-expanded="false"' : ""}><small>0${i + 1}</small>${n}<span>↗</span></button>`).join("")}</nav>
     </section>`);
     this.root = stage.querySelector(".workbench")!;
+    if (isDjPrototype) this.restorePlaylistExportSnapshot();
     this.player = new DjPlayer({
       resolveAudioUrl: (trackId: string) => yesmusicApi.getSongUrl(trackId),
       onChange: (state: DjPlayerState) => this.onPlayerState(state),
     });
+    if (isDjPrototype) this.restorePlayerSnapshot();
     if (isDjPrototype) this.agentPanel = new DjAgentPanel({
       openSearch: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search"),
       openPlaylists: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist"),
@@ -190,6 +205,7 @@ export class Workbench {
     if (isDjPrototype) window.addEventListener("yesmusic-account-updated", event => {
       const detail = (event as CustomEvent<{ authenticated: boolean; userId?: string }>).detail;
       this.accountUserId = detail?.authenticated ? String(detail.userId ?? "") : "";
+      if (this.accountUserId) this.resumePlaylistExportForAccount(this.accountUserId);
       if (!this.accountUserId) {
         this.playlists = [];
         this.playlistDetail = null;
@@ -594,6 +610,7 @@ export class Workbench {
   private renderPlaylistExportBanner() {
     const state = this.playlistExportState;
     if (!state || state.phase === "confirm") return "";
+    if (!this.accountUserId || this.playlistExportSnapshot?.accountUserId !== this.accountUserId) return "";
     const status = state.phase === "running" ? "正在导出" : state.phase === "done" ? state.failed ? "部分完成" : "导出完成" : "导出中断 / 结果未完整确认";
     const action = this.rightDrawerMode === "playlist" && !this.playlistDetailOpen && this.selectedPlaylistId === state.playlistId
       ? `<button data-dj-action="playlist-export-return">查看歌单详情 ↗</button>` : "";
@@ -694,6 +711,7 @@ export class Workbench {
     const previousTrackId = this.playerTrackId;
     const previousStatus = this.playerState.status;
     this.playerState = state;
+    this.persistPlayerSnapshot(state);
     const trackId = state.track?.id ?? "";
     if (trackId !== previousTrackId) {
       this.playerTrackId = trackId;
@@ -702,6 +720,47 @@ export class Workbench {
     }
     this.renderDjPlayer();
     if (this.rightDrawerOpen && this.rightDrawerMode === "search" && (trackId !== previousTrackId || state.status !== previousStatus)) this.renderOnlineSearchResults();
+  }
+  private restorePlayerSnapshot() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(playerStorageKey) ?? "null");
+      if (saved?.version !== 1 || !Array.isArray(saved.queue)) return;
+      const queue = saved.queue.slice(0, 1000).map((item: unknown) => {
+        const track = item && typeof item === "object" ? item as Record<string, unknown> : {};
+        const id = typeof track.id === "string" || typeof track.id === "number" ? String(track.id) : "";
+        if (!id) return null;
+        return {
+          id,
+          title: typeof track.title === "string" ? track.title.slice(0, 300) : "未命名曲目",
+          artists: Array.isArray(track.artists) ? track.artists.filter((value: unknown): value is string => typeof value === "string").slice(0, 20) : [],
+          album: typeof track.album === "string" ? track.album.slice(0, 300) : "未知专辑",
+          coverUrl: typeof track.coverUrl === "string" ? track.coverUrl.slice(0, 2000) : null,
+          durationMs: Number.isFinite(Number(track.durationMs)) ? Math.max(0, Number(track.durationMs)) : null,
+        } satisfies NeteaseTrack;
+      }).filter((track: NeteaseTrack | null): track is NeteaseTrack => Boolean(track));
+      if (queue.length) this.player.restoreQueue(queue, Number(saved.index) || 0, Number(saved.currentTime) || 0, Number(saved.duration) || 0);
+    } catch { /* A damaged local snapshot must not prevent the DJ workspace from loading. */ }
+  }
+  private persistPlayerSnapshot(state: DjPlayerState) {
+    if (!isDjPrototype) return;
+    const now = Date.now();
+    if (state.status === "playing" && now - this.playerSnapshotWriteAt < 1000 && state.track?.id === this.playerTrackId) return;
+    this.playerSnapshotWriteAt = now;
+    try {
+      if (!state.queue.length || state.index < 0) {
+        localStorage.removeItem(playerStorageKey);
+        return;
+      }
+      const queue = state.queue.slice(0, 1000);
+      localStorage.setItem(playerStorageKey, JSON.stringify({
+        version: 1,
+        queue,
+        index: Math.max(0, Math.min(queue.length - 1, state.index)),
+        currentTime: Math.max(0, Number(state.currentTime) || 0),
+        duration: Math.max(0, Number(state.duration) || 0),
+        savedAt: now,
+      }));
+    } catch { /* Queue persistence is best effort; playback remains available. */ }
   }
   private settle(now: number) {
     if (this.timer.status === "running" && timerLeft(this.timer, now) === 0) {
@@ -942,11 +1001,22 @@ export class Workbench {
         return;
       }
       this.playlistExportConfirm = false;
-      this.playlistExportState = createPlaylistExportState(playlist, "running");
+      const jobId = globalThis.crypto?.randomUUID?.() ?? `dj-export-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+      const initialState = createPlaylistExportState(playlist, "running");
+      this.playlistExportSnapshot = {
+        version: 1,
+        jobId,
+        accountUserId: this.accountUserId,
+        outputRoot,
+        playlist: { id: playlist.id, name: playlist.name, coverUrl: playlist.coverUrl, trackCount: playlist.trackCount },
+        state: initialState,
+      };
+      this.playlistExportState = initialState;
+      this.persistPlaylistExportSnapshot();
       this.stage.dataset.playlistExporting = "true";
       this.renderRightDrawer();
       const onState = (state: PlaylistExportState) => this.setPlaylistExportState(state);
-      try { await this.onPlaylistExport(playlist, outputRoot, onState); }
+      try { await this.onPlaylistExport(playlist, outputRoot, onState, jobId, false, initialState); }
       catch (error) { this.setPlaylistExportState(failPlaylistExport(this.playlistExportState, error)); }
       return;
     }
@@ -1082,12 +1152,63 @@ export class Workbench {
   }
   setPlaylistExportState(state: PlaylistExportState) {
     this.playlistExportState = state;
+    if (this.playlistExportSnapshot) {
+      this.playlistExportSnapshot = { ...this.playlistExportSnapshot, state };
+      this.persistPlaylistExportSnapshot();
+    }
     this.stage.dataset.playlistExporting = "true";
     if (state.phase === "done" || state.phase === "error") this.stage.dataset.playlistExportComplete = "true";
     else delete this.stage.dataset.playlistExportComplete;
     const current = this.root.querySelector<HTMLElement>("#dj-playlist-export-status");
     if (current) current.outerHTML = this.renderPlaylistExportBanner();
     else if (this.rightDrawerOpen && this.rightDrawerMode === "playlist") this.renderRightDrawer();
+  }
+  private restorePlaylistExportSnapshot() {
+    try {
+      const raw = localStorage.getItem(playlistExportStorageKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<PersistedPlaylistExport>;
+      const state = saved.state;
+      const playlist = saved.playlist;
+      if (saved.version !== 1 || typeof saved.jobId !== "string" || !saved.jobId || typeof saved.accountUserId !== "string" || !saved.accountUserId || typeof saved.outputRoot !== "string" || !playlist || typeof playlist.id !== "string" || typeof playlist.name !== "string" || !state || !["running", "done", "error"].includes(state.phase)) return;
+      this.playlistExportSnapshot = {
+        version: 1,
+        jobId: saved.jobId.slice(0, 80),
+        accountUserId: saved.accountUserId.slice(0, 80),
+        outputRoot: saved.outputRoot.slice(0, 500),
+        playlist: { id: playlist.id.slice(0, 80), name: playlist.name.slice(0, 200), coverUrl: playlist.coverUrl || null, trackCount: Math.max(0, Number(playlist.trackCount) || 0) },
+        state: { ...state, finishedTrackKeys: Array.isArray(state.finishedTrackKeys) ? state.finishedTrackKeys.filter((value): value is string => typeof value === "string").slice(-2000) : [] },
+      };
+      this.playlistExportState = this.playlistExportSnapshot.state.phase === "running"
+        ? { ...this.playlistExportSnapshot.state, message: "正在重新连接导出任务并核对实时状态。" }
+        : this.playlistExportSnapshot.state;
+      this.selectedPlaylistId = this.playlistExportSnapshot.playlist.id;
+      this.stage.dataset.playlistExporting = "true";
+      if (this.playlistExportState.phase === "done" || this.playlistExportState.phase === "error") this.stage.dataset.playlistExportComplete = "true";
+      this.onRestorePlaylistExport(this.playlistExportState);
+    } catch { this.playlistExportSnapshot = null; }
+  }
+  private persistPlaylistExportSnapshot() {
+    if (!this.playlistExportSnapshot || !this.playlistExportState) return;
+    try {
+      localStorage.setItem(playlistExportStorageKey, JSON.stringify({ ...this.playlistExportSnapshot, state: this.playlistExportState }));
+    } catch {
+      const status = this.root.querySelector<HTMLElement>(".wb-storage");
+      if (status) status.textContent = "导出状态无法保存到本机；刷新后可能无法恢复任务进度。";
+    }
+  }
+  private resumePlaylistExportForAccount(userId: string) {
+    const saved = this.playlistExportSnapshot;
+    if (!saved || saved.accountUserId !== userId || saved.state.phase !== "running" || this.exportResumeInFlight) return;
+    this.exportResumeInFlight = true;
+    this.playlistExportState = { ...saved.state, stage: "正在重新连接导出任务", message: "页面已恢复，正在从服务端核对导出状态。" };
+    const initialState = this.playlistExportState;
+    this.stage.dataset.playlistExporting = "true";
+    delete this.stage.dataset.playlistExportComplete;
+    const onState = (state: PlaylistExportState) => this.setPlaylistExportState(state);
+    void Promise.resolve(this.onPlaylistExport(saved.playlist, saved.outputRoot, onState, saved.jobId, true, initialState))
+      .catch(error => { if (this.playlistExportState) this.setPlaylistExportState(failPlaylistExport(this.playlistExportState, error)); })
+      .finally(() => { this.exportResumeInFlight = false; });
   }
   private persistOutputRoot() {
     if (!this.outputRoot) {

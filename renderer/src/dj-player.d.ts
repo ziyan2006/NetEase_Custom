@@ -20,6 +20,7 @@ export class DjPlayer {
   });
   getState(): DjPlayerState;
   setQueue(queue: NeteaseTrack[], index?: number, autoplay?: boolean): Promise<void>;
+  restoreQueue(queue: NeteaseTrack[], index?: number, currentTime?: number, duration?: number): void;
   toggle(): Promise<void>;
   next(): Promise<void>;
   previous(): Promise<void>;

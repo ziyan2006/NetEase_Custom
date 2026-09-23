@@ -136,11 +136,11 @@ test("playlist export sends credentials only in the POST body and requires a don
   };
   try {
     const seen = [];
-    await api.yesmusicApi.exportPlaylist({ id: "123", name: "Peak Hour", outputRoot: "D:\\\\DJ" }, event => seen.push(event));
+    await api.yesmusicApi.exportPlaylist({ id: "123", name: "Peak Hour", outputRoot: "D:\\\\DJ", jobId: "export-job-12345", resume: true }, event => seen.push(event));
     const body = JSON.parse(calls[0].options.body);
     assert.equal(calls[0].url, "/api/playlist/export");
     assert.equal(calls[0].options.headers.Accept, "text/event-stream");
-    assert.deepEqual(body, { id: "123", name: "Peak Hour", outputRoot: "D:\\\\DJ", cookie: "MUSIC_U=export-fixture" });
+    assert.deepEqual(body, { id: "123", name: "Peak Hour", outputRoot: "D:\\\\DJ", jobId: "export-job-12345", resume: true, cookie: "MUSIC_U=export-fixture" });
     assert.equal(calls[0].url.includes("MUSIC_U"), false);
     assert.equal(seen.at(-1).type, "done");
 

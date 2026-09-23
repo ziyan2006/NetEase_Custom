@@ -8,6 +8,7 @@ delete process.env.all_proxy;
 
 import "./load-env.js";
 import { createServer as createHttpServer } from "node:http";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
@@ -546,6 +547,71 @@ async function runDiagnostic() {
 export function createAppServer() {
   const sessionStore = new SessionStore();
   const harnessRuntime = new HarnessRuntime();
+  const exportJobs = new Map();
+  const exportJobLifetimeMs = 6 * 60 * 60 * 1000;
+  function pruneExportJobs() {
+    const now = Date.now();
+    for (const [id, job] of exportJobs) {
+      if (job.done && now - job.endedAt > exportJobLifetimeMs) exportJobs.delete(id);
+    }
+    if (exportJobs.size <= 32) return;
+    for (const [id, job] of exportJobs) {
+      if (exportJobs.size <= 32) break;
+      if (job.done) exportJobs.delete(id);
+    }
+  }
+  function sendExportJobEvent(job, event) {
+    if (job.done) return;
+    const type = String(event?.type ?? "event");
+    const index = event?.index === undefined ? "" : String(event.index);
+    const coalesceKey = ["track", "progress", "track-done", "track-fail"].includes(type)
+      ? `${type}:${index}`
+      : type === "urls" ? "urls" : "";
+    const item = { sequence: ++job.sequence, event };
+    if (coalesceKey) {
+      const previousIndex = job.events.findIndex(entry => entry.coalesceKey === coalesceKey);
+      if (previousIndex >= 0) job.events.splice(previousIndex, 1);
+    }
+    job.events.push({ ...item, coalesceKey });
+    if (job.events.length > 10000) job.events.splice(0, job.events.length - 10000);
+    for (const subscriber of job.subscribers) {
+      if (!subscriber.destroyed && !subscriber.writableEnded) writeSseEvent(subscriber, event);
+    }
+    if (type === "done" || type === "error") job.done = true;
+  }
+  function streamExportJob(response, job) {
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+      "X-Export-Job-Id": job.id,
+    });
+    response.write("retry: 1000\n\n");
+    for (const entry of [...job.events].sort((a, b) => a.sequence - b.sequence)) writeSseEvent(response, entry.event);
+    if (job.done) {
+      response.end();
+      return;
+    }
+    job.subscribers.add(response);
+    response.on("close", () => job.subscribers.delete(response));
+  }
+  function startExportJob(job, input) {
+    void exportPlaylistWithEvents(input, event => sendExportJobEvent(job, event))
+      .catch(error => {
+        console.error("歌单导出异常", error);
+        sendExportJobEvent(job, { type: "error", message: `批量导出发生异常：${error instanceof Error ? error.message : "未知错误"}` });
+      })
+      .finally(() => {
+        job.done = true;
+        job.endedAt = Date.now();
+        for (const subscriber of job.subscribers) {
+          if (!subscriber.destroyed && !subscriber.writableEnded) subscriber.end();
+        }
+        job.subscribers.clear();
+        pruneExportJobs();
+      });
+  }
   if (process.env.YESMUSIC_CDN_DIAGNOSTIC === "1") {
     setTimeout(runDiagnostic, 2000);
   }
@@ -905,23 +971,47 @@ export function createAppServer() {
           return;
         }
 
-        // SSE 流式导出：实时推送每首歌的下载进度事件
-        response.writeHead(200, {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          "Connection": "keep-alive",
-          "X-Accel-Buffering": "no",
-        });
-        response.write("retry: 1000\n\n");
-
-        try {
-          await exportPlaylistWithEvents({ id, name, outputRoot, cookie }, (evt) => writeSseEvent(response, evt));
-        } catch (err) {
-          console.error("歌单导出异常", err);
-          writeSseEvent(response, { type: "error", message: "批量导出发生异常: " + err.message });
-        } finally {
-          response.end();
+        const requestedJobId = typeof params.jobId === "string" ? params.jobId.trim() : "";
+        if (requestedJobId && !/^[\w-]{8,80}$/.test(requestedJobId)) {
+          sendJson(response, 400, { message: "导出任务 ID 格式无效。" });
+          return;
         }
+        pruneExportJobs();
+        const jobId = requestedJobId || randomUUID();
+        const signature = createHash("sha256")
+          .update(JSON.stringify([String(id), String(name), outputRoot.trim(), String(cookie || "")]))
+          .digest("hex");
+        const existingJob = exportJobs.get(jobId);
+        if (existingJob) {
+          if (existingJob.signature !== signature) {
+            sendJson(response, 409, { message: "导出任务参数与已有任务不一致。" });
+            return;
+          }
+          streamExportJob(response, existingJob);
+          return;
+        }
+        if (params.resume === true) {
+          sendJson(response, 404, { message: "服务端已无法确认这项导出任务，请检查目标目录后再决定是否重试。" });
+          return;
+        }
+        if (exportJobs.size >= 32) {
+          sendJson(response, 429, { message: "当前导出任务过多，请稍后再开始新的任务。" });
+          return;
+        }
+
+        const job = {
+          id: jobId,
+          signature,
+          events: [],
+          sequence: 0,
+          subscribers: new Set(),
+          done: false,
+          startedAt: Date.now(),
+          endedAt: 0,
+        };
+        exportJobs.set(jobId, job);
+        streamExportJob(response, job);
+        startExportJob(job, { id, name, outputRoot: outputRoot.trim(), cookie });
       } catch (err) {
         console.error("歌单导出异常", err);
         sendJson(response, 500, { message: "批量导出发生异常: " + err.message });

@@ -25,6 +25,9 @@ export class CardAppearance {
       const name = mesh.userData.surface as string;
       const palette = this.palettes.get(name);
       if (!palette) {
+        // Cloned archive groups retain their already-themed materials and
+        // uniform references. Wrapping them again duplicates GLSL uniforms.
+        if (mesh.userData.themeAmount) continue;
         mesh.userData.themeAmount = themeMaterial(mesh.material as THREE.Material, "Printed_Canvas");
         continue;
       }

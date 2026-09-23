@@ -7,6 +7,7 @@ class MockAudio extends EventTarget {
     super();
     this.duration = 120;
     this.currentTime = 0;
+    this.readyState = 0;
     this.paused = true;
     this.ended = false;
     this.src = "";
@@ -14,8 +15,8 @@ class MockAudio extends EventTarget {
   }
   async play() { this.paused = false; this.dispatchEvent(new Event("play")); }
   pause() { if (!this.paused) { this.paused = true; this.dispatchEvent(new Event("pause")); } }
-  load() { if (this.src) this.dispatchEvent(new Event("loadedmetadata")); }
-  removeAttribute(name) { if (name === "src") this.src = ""; }
+  load() { if (this.src) { this.readyState = 1; this.dispatchEvent(new Event("loadedmetadata")); } }
+  removeAttribute(name) { if (name === "src") { this.src = ""; this.readyState = 0; } }
   fail(message) { this.error = { message }; this.dispatchEvent(new Event("error")); }
   finish() { this.ended = true; this.paused = true; this.dispatchEvent(new Event("ended")); }
 }
@@ -68,4 +69,21 @@ test("audio duration and seek are taken from the HTMLAudioElement", async () => 
   player.seek(83);
   assert.equal(audio.currentTime, 83);
   assert.equal(player.getState().currentTime, 83);
+});
+
+test("restores the last queue paused and seeks to its saved position only after explicit play", async () => {
+  const audio = new MockAudio();
+  const requested = [];
+  const player = new DjPlayer({ audio, resolveAudioUrl: async id => { requested.push(id); return `https://audio/${id}.mp3`; } });
+  player.restoreQueue(tracks, 1, 54, 120);
+  assert.equal(player.getState().track.id, "track-2");
+  assert.equal(player.getState().status, "paused");
+  assert.equal(player.getState().currentTime, 54);
+  assert.equal(audio.src, "");
+  assert.deepEqual(requested, [], "refresh restoration must never autoplay or request audio before user input");
+  await player.toggle();
+  assert.equal(audio.src, "https://audio/track-2.mp3");
+  assert.equal(audio.currentTime, 54);
+  assert.equal(player.getState().status, "playing");
+  assert.deepEqual(requested, ["track-2"]);
 });

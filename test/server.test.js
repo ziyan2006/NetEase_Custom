@@ -135,6 +135,7 @@ test("routes the root to the DJ UI by default and honors the legacy fallback", (
 test("streams realtime progress events while exporting a playlist (SSE)", async () => {
   const originalFetch = globalThis.fetch;
   const mp3Bytes = Uint8Array.from([0x49, 0x44, 0x33, 0, 0, 0, 0, 0, 0, 0]);
+  let upstreamCallCount = 0;
 
   // 桩替所有上游请求：歌单详情 / 播放直链 / 音频下载（本地服务请求放行）
   globalThis.fetch = async (url, options) => {
@@ -142,6 +143,7 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     if (urlStr.startsWith("http://127.0.0.1")) {
       return originalFetch(url, options);
     }
+    upstreamCallCount++;
     if (urlStr.includes("/api/v6/playlist/detail")) {
       return new Response(JSON.stringify({
         code: 200,
@@ -180,7 +182,7 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     const response = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
-      body: JSON.stringify({ id: "123", name: "Test PL", outputRoot: "./test_export_temp", cookie: "MUSIC_U=x" }),
+      body: JSON.stringify({ id: "123", name: "Test PL", outputRoot: "./test_export_temp", cookie: "MUSIC_U=x", jobId: "test-export-job-123" }),
     });
 
     assert.equal(response.status, 200);
@@ -206,6 +208,29 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     assert.equal(doneEvt.failedCount, 0);
     assert.equal(doneEvt.overall, 100);
 
+    const completedUpstreamCalls = upstreamCallCount;
+    const resumed = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify({ id: "123", name: "Test PL", outputRoot: "./test_export_temp", cookie: "MUSIC_U=x", jobId: "test-export-job-123", resume: true }),
+    });
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.headers.get("x-export-job-id"), "test-export-job-123");
+    const resumedEvents = (await resumed.text())
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice(5).trim()));
+    assert.equal(resumedEvents.at(-1)?.type, "done", "reconnected clients receive the recorded completion event");
+    assert.equal(upstreamCallCount, completedUpstreamCalls, "reattaching must not start a duplicate export");
+
+    const unknownResume = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify({ id: "123", name: "Test PL", outputRoot: "./test_export_temp", cookie: "MUSIC_U=x", jobId: "unknown-export-job", resume: true }),
+    });
+    assert.equal(unknownResume.status, 404, "unknown resumed jobs must not be silently rerun");
+    assert.match((await unknownResume.json()).message, /无法确认/);
+
     const progressEvts = events.filter((e) => e.type === "progress");
     assert.ok(progressEvts.length >= 2, "should emit per-track progress events");
     assert.ok(progressEvts.every((e) => e.speedBytesPerSec >= 0));
@@ -215,6 +240,78 @@ test("streams realtime progress events while exporting a playlist (SSE)", async 
     const fs = await import("node:fs/promises");
     await fs.rm("./test_export_temp", { recursive: true, force: true }).catch(() => null);
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("keeps an export alive after its SSE client disconnects and resumes the same job without duplicating it", async () => {
+  const originalFetch = globalThis.fetch;
+  const outputRoot = await mkdtemp(join(tmpdir(), "yesmusic-resume-export-"));
+  let detailCalls = 0;
+  let releaseDownload;
+  let markDownloadStarted;
+  const downloadBlocked = new Promise(resolve => { releaseDownload = resolve; });
+  const downloadStarted = new Promise(resolve => { markDownloadStarted = resolve; });
+  globalThis.fetch = async (url, options) => {
+    const urlStr = String(url);
+    if (urlStr.startsWith("http://127.0.0.1")) return originalFetch(url, options);
+    if (urlStr.includes("/api/v6/playlist/detail")) {
+      detailCalls++;
+      return new Response(JSON.stringify({ code: 200, playlist: { name: "Resume Fixture", tracks: [{ id: 321, name: "Slow Track", ar: [{ name: "Artist" }] }] } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr.includes("/api/song/enhance/player/url/v1")) {
+      return new Response(JSON.stringify({ code: 200, data: [{ id: 321, url: "http://fake-cdn.local/slow.mp3" }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    if (urlStr === "http://fake-cdn.local/slow.mp3") {
+      markDownloadStarted();
+      await downloadBlocked;
+      return new Response(new Blob([Uint8Array.from([0x49, 0x44, 0x33, 1, 2, 3, 4, 5])]), { status: 200, headers: { "content-type": "audio/mpeg" } });
+    }
+    return new Response(JSON.stringify({ code: 200 }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  const server = createAppServer();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const input = { id: "987", name: "Resume Fixture", outputRoot, cookie: "MUSIC_U=resume-test", jobId: "resume-job-123456" };
+    const first = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify(input),
+    });
+    assert.equal(first.status, 200);
+    const firstReader = first.body.getReader();
+    const decoder = new TextDecoder();
+    let firstBuffer = "";
+    while (!firstBuffer.includes('"type":"track"')) {
+      const { done, value } = await firstReader.read();
+      assert.equal(done, false, "the initial stream should remain open during download");
+      firstBuffer += decoder.decode(value, { stream: true });
+    }
+    await firstReader.cancel();
+    await Promise.race([
+      downloadStarted,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("download fixture did not start")), 2000)),
+    ]);
+
+    const resumed = await fetch(`http://127.0.0.1:${port}/api/playlist/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "text/event-stream" },
+      body: JSON.stringify({ ...input, resume: true }),
+    });
+    assert.equal(resumed.status, 200);
+    assert.equal(resumed.headers.get("x-export-job-id"), input.jobId);
+    releaseDownload();
+    const resumedBody = await resumed.text();
+    const resumedEvents = resumedBody.split("\n").filter(line => line.startsWith("data:")).map(line => JSON.parse(line.slice(5).trim()));
+    assert.ok(resumedEvents.some(event => event.type === "track"), "the resumed stream starts with the last persisted stage");
+    assert.equal(resumedEvents.at(-1)?.type, "done");
+    assert.equal(detailCalls, 1, "reconnecting must not launch the same export twice");
+  } finally {
+    releaseDownload();
+    globalThis.fetch = originalFetch;
+    await rm(outputRoot, { recursive: true, force: true }).catch(() => null);
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   }
 });
 

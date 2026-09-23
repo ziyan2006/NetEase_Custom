@@ -614,7 +614,9 @@ export class ArchiveScene {
       if (exportArchive && (exportCoreSurfaces.has(name) || exportCoreParts.has(object.name))) return;
       const mesh = new THREE.Mesh(
         object.geometry.clone().applyMatrix4(object.matrixWorld),
-        object.material,
+        // Appearance installs per-instance shader hooks. Sharing the GLTF
+        // material would stack those hooks every time a detail view is built.
+        object.material.clone(),
       );
       mesh.name = object.name;
       mesh.userData.surface = name;
@@ -830,6 +832,9 @@ export class ArchiveScene {
         transparent: true,
         depthWrite: false,
       });
+      // clone(true) copied the old label's theme uniform reference along with
+      // the object tree; this new material needs its own theme hook.
+      delete label.userData.themeAmount;
       // Clone carries the selected label material by reference. Replace it
       // before installing appearance shaders, so theme hooks are not appended
       // to the original label a second time on every selection.
