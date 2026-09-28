@@ -14,6 +14,14 @@ const hasNovecento = ["Normal", "DemiBold", "Bold"].every(weight =>
 );
 export default defineConfig(({ mode }) => ({
   base: mode === "yesmusic" ? "/dj/" : mode === "wallpaper" || mode === "dj" ? "./" : "/",
+  server: {
+    // The renderer dev server serves the UI only. Forward API calls to the
+    // same local backend used by the packaged app so account/login flows do
+    // not receive Vite's SPA HTML fallback where JSON is expected.
+    proxy: {
+      "/api": { target: "http://127.0.0.1:4178", changeOrigin: true },
+    },
+  },
   define: {
     __RHINE_MODELS__: JSON.stringify(Object.fromEntries(models.map(model => [model.key,model.fileName]))),
     __RHINE_NOVECENTO__: JSON.stringify(hasNovecento),

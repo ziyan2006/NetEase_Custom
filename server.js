@@ -9,6 +9,7 @@ delete process.env.all_proxy;
 import "./load-env.js";
 import { createServer as createHttpServer } from "node:http";
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { readFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,6 +67,26 @@ function sendJson(response, statusCode, payload) {
   if (response.destroyed || response.writableEnded || response.headersSent) return;
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
+}
+
+const songStreamLifetimeMs = 6 * 60 * 60 * 1000;
+const maxSongStreamTokens = 512;
+function registerSongStream(rawUrl, streams) {
+  let target;
+  try { target = new URL(rawUrl); }
+  catch { return null; }
+  const neteaseHost = target.hostname === "music.163.com" || target.hostname.endsWith(".music.126.net");
+  if (!neteaseHost || !["http:", "https:"].includes(target.protocol) || target.username || target.password) return null;
+  // NetEase still returns some HTTP CDN URLs; normalize those to HTTPS before
+  // proxying so Web Audio can inspect playback without exposing a mixed source.
+  target.protocol = "https:";
+
+  const now = Date.now();
+  for (const [token, stream] of streams) if (stream.expiresAt <= now) streams.delete(token);
+  while (streams.size >= maxSongStreamTokens) streams.delete(streams.keys().next().value);
+  const token = randomUUID();
+  streams.set(token, { url: target.href, expiresAt: now + songStreamLifetimeMs });
+  return `/api/song/stream/${token}`;
 }
 
 function parseMultipart(contentType, body) {
@@ -550,6 +571,7 @@ export function createAppServer() {
   const sessionStore = new SessionStore();
   const harnessRuntime = new HarnessRuntime();
   const exportJobs = new Map();
+  const songStreamTokens = new Map();
   const exportJobLifetimeMs = 6 * 60 * 60 * 1000;
   function pruneExportJobs() {
     const now = Date.now();
@@ -870,6 +892,42 @@ export function createAppServer() {
       return;
     }
 
+    if (request.method === "GET" && urlObj.pathname.startsWith("/api/song/stream/")) {
+      const token = urlObj.pathname.slice("/api/song/stream/".length);
+      const stream = songStreamTokens.get(token);
+      if (!stream || stream.expiresAt <= Date.now()) {
+        songStreamTokens.delete(token);
+        sendJson(response, 410, { message: "音源链接已失效，请重新播放。" });
+        return;
+      }
+
+      try {
+        const headers = { Referer: "https://music.163.com/" };
+        const range = request.headers.range;
+        if (range && /^bytes=\d*-\d*$/.test(range)) headers.Range = range;
+        const ifRange = request.headers["if-range"];
+        if (ifRange) headers["If-Range"] = ifRange;
+        const upstream = await fetch(stream.url, { headers });
+        const responseHeaders = {
+          "Content-Type": upstream.headers.get("content-type") || "audio/mpeg",
+          "Cache-Control": "private, max-age=120",
+        };
+        for (const name of ["accept-ranges", "content-length", "content-range", "etag", "last-modified"]) {
+          const value = upstream.headers.get(name);
+          if (value) responseHeaders[name] = value;
+        }
+        response.writeHead(upstream.status, responseHeaders);
+        if (!upstream.body) { response.end(); return; }
+        const body = Readable.fromWeb(upstream.body);
+        response.on("close", () => { if (!response.writableEnded) body.destroy(); });
+        body.on("error", () => { if (!response.destroyed) response.destroy(); });
+        body.pipe(response);
+      } catch {
+        sendJson(response, 502, { message: "音源读取失败，请检查网络后重试。" });
+      }
+      return;
+    }
+
     if (request.method === "GET" && urlObj.pathname === "/api/song/url") {
       const id = urlObj.searchParams.get("id");
       const cookie = request.headers["x-cookie"] || urlObj.searchParams.get("cookie") || "";
@@ -885,6 +943,15 @@ export function createAppServer() {
           body: { ids: `[${id}]`, level: "exhigh", encodeType: "flac" },
           cookie,
         });
+        const tracks = Array.isArray(resData?.data)
+          ? resData.data
+          : Array.isArray(resData?.data?.data)
+            ? resData.data.data
+            : [];
+        for (const track of tracks) {
+          const streamUrl = registerSongStream(track?.url, songStreamTokens);
+          if (streamUrl) track.url = streamUrl;
+        }
         sendJson(response, 200, resData);
       } catch (err) {
         sendJson(response, 500, { message: "获取歌曲播放流失败: " + err.message });

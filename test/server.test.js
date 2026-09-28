@@ -132,6 +132,56 @@ test("routes the root to the DJ UI by default and honors the legacy fallback", (
   assert.equal(resolveStaticPath("/dj/"), "/dj/index.html");
 });
 
+test("DJ song playback uses a same-origin stream proxy and forwards byte ranges", async () => {
+  const originalFetch = globalThis.fetch;
+  const audioBytes = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7]);
+  const upstreamRanges = [];
+  globalThis.fetch = async (input, options = {}) => {
+    const url = String(input);
+    if (url.startsWith("http://127.0.0.1")) return originalFetch(input, options);
+    if (url.includes("/song/enhance/player/url/v1")) {
+      return new Response(JSON.stringify({ code: 200, data: [{ id: 321, url: "http://m7.music.126.net/test-track.mp3?auth=short-lived" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.startsWith("https://m7.music.126.net/test-track.mp3")) {
+      upstreamRanges.push(options.headers?.Range ?? "");
+      return new Response(audioBytes.slice(2, 5), {
+        status: 206,
+        headers: {
+          "content-type": "audio/mpeg",
+          "accept-ranges": "bytes",
+          "content-length": "3",
+          "content-range": "bytes 2-4/8",
+        },
+      });
+    }
+    throw new Error(`Unexpected upstream request: ${url}`);
+  };
+
+  const server = createAppServer();
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const lookup = await fetch(`http://127.0.0.1:${port}/api/song/url?id=321`);
+    assert.equal(lookup.status, 200);
+    const payload = await lookup.json();
+    const localUrl = payload.data[0].url;
+    assert.match(localUrl, /^\/api\/song\/stream\/[0-9a-f-]+$/i);
+
+    const stream = await fetch(`http://127.0.0.1:${port}${localUrl}`, { headers: { Range: "bytes=2-4" } });
+    assert.equal(stream.status, 206);
+    assert.equal(stream.headers.get("content-range"), "bytes 2-4/8");
+    assert.equal(stream.headers.get("content-type"), "audio/mpeg");
+    assert.deepEqual(Buffer.from(await stream.arrayBuffer()), Buffer.from([2, 3, 4]));
+    assert.deepEqual(upstreamRanges, ["bytes=2-4"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
+
 test("CDN diagnostics never log short-lived signed audio URLs", async () => {
   const originalFetch = globalThis.fetch;
   const originalLog = console.log;
