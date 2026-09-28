@@ -16,7 +16,7 @@
     "dev:ui": "npm run dev --workspace yesmusic-dj-renderer",
     "build:ui": "npm run build --workspace yesmusic-dj-renderer",
     "harness:web": "node harness/start.mjs",
-    "test": "node --test test/*.test.js",
+    "test": "node --test test/*.test.js renderer/src/*.test.js",
     "build:dir": "npm run build:ui && electron-builder --dir",
     "build:portable": "npm run build:ui && electron-builder --win portable",
     "build:nsis": "npm run build:ui && electron-builder --win nsis",

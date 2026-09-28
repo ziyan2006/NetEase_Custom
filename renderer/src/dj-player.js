@@ -6,10 +6,11 @@ function messageForPlaybackError(error) {
 
 /** One HTMLAudioElement and one queue shared by all DJ playback entry points. */
 export class DjPlayer {
-  constructor({ resolveAudioUrl, onChange = () => {}, audio = new Audio() }) {
+  constructor({ resolveAudioUrl, onChange = () => {}, onPlayRequested = () => {}, audio = new Audio() }) {
     this.audio = audio;
     this.resolveAudioUrl = resolveAudioUrl;
     this.onChange = onChange;
+    this.onPlayRequested = onPlayRequested;
     this.requestId = 0;
     this.restorePosition = 0;
     this.state = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "" };
@@ -104,6 +105,7 @@ export class DjPlayer {
     const nextIndex = (index + this.state.queue.length) % this.state.queue.length;
     const track = this.state.queue[nextIndex];
     if (!force && nextIndex === this.state.index && this.state.status === "playing") return;
+    this.onPlayRequested();
     const resumePosition = nextIndex === this.state.index ? this.restorePosition : 0;
     this.restorePosition = 0;
     const requestId = ++this.requestId;
@@ -140,6 +142,7 @@ export class DjPlayer {
     }
     if (this.state.index < 0 || !this.state.queue.length) return;
     if (this.audio.src && !this.audio.ended && this.state.status !== "error") {
+      this.onPlayRequested();
       try {
         await this.audio.play();
         this.setState({ status: "playing", error: "" });

@@ -16,6 +16,7 @@ export class DjPlayer {
   constructor(options: {
     resolveAudioUrl: (trackId: string) => Promise<string | null>;
     onChange?: (state: DjPlayerState) => void;
+    onPlayRequested?: () => void;
     audio?: HTMLAudioElement;
   });
   getState(): DjPlayerState;

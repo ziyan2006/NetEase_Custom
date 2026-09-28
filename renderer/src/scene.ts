@@ -39,6 +39,7 @@ import {
 import { labelMarkSvg } from "./brand";
 import { isDjPrototype } from "./wallpaper";
 import { archiveFraming } from "./viewport-layout";
+import { cameraFacingSpectrumLane, djSpectrumBandAtScreenX, djSpectrumLaneDisplacement, type PlayerSpectrumFrame } from "./dj-spectrum.js";
 import { ArchiveDrag, ArchivePlaneMomentum, type DragAxis, type DragProjection, type DragPosition } from "./archive-drag";
 import { assetUrl as publicAsset } from "./asset-url";
 import {
@@ -147,6 +148,7 @@ export class ArchiveScene {
   get themeAmount() { return this.theme.background(performance.now() / 1000); }
   setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
+  private djSpectrum: PlayerSpectrumFrame | null = null;
   private flatMix = 0;
   private rhythm = new RhythmMotion();
   private rhythmStyle: RhythmStyle = "legacy";
@@ -158,6 +160,7 @@ export class ArchiveScene {
   setPlayfield(enabled: boolean, bands: MusicBands, strength: number, flatten: number, target: string | null, breathing = true) {
     this.playfield = { enabled, bands, strength, flatten, target, breathing };
   }
+  setDjSpectrum(frame: PlayerSpectrumFrame | null) { this.djSpectrum = frame; }
   setRelayActive(active: boolean) {
     if (active === this.relayActive) return;
     this.cancelPointer(); this.setHover(null); this.relayActive = active;
@@ -264,6 +267,8 @@ export class ArchiveScene {
   private labelTexture?: THREE.CanvasTexture;
   private exportScreenCanvas = document.createElement("canvas");
   private exportScreenTexture?: THREE.CanvasTexture;
+  private exportScreenClarity = { value: 0 };
+  private exportFocusClarity = { value: 0, velocity: 0 };
   private labelMark = new Image();
   private selectedArchiveIndex = 0;
   private exportProgress: {
@@ -530,7 +535,7 @@ export class ArchiveScene {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const screenClarity = { value: 0 };
+    const screenClarity = this.exportScreenClarity;
     screenMaterial.onBeforeCompile = shader => {
       shader.uniforms.exportScreenClarity = screenClarity;
       shader.fragmentShader = `uniform float exportScreenClarity;\n${shader.fragmentShader}`;
@@ -909,6 +914,11 @@ export class ArchiveScene {
   private isExportArchive() {
     return isDjPrototype && records[this.selectedArchiveIndex]?.en === "EXPORT PROGRESS";
   }
+  private isExportFocusActive() {
+    const stage = this.container.closest<HTMLElement>("#stage");
+    const drawer = stage?.querySelector<HTMLElement>(".wb-playlist-drawer");
+    return this.isExportArchive() && stage?.dataset.playlistExporting === "true" && stage.dataset.djDrawerOpen === "true" && drawer?.dataset.djDrawerMode === "playlist";
+  }
   private drawExportScreen() {
     const texture = this.exportScreenTexture;
     const progress = this.exportProgress ?? (
@@ -1112,6 +1122,7 @@ export class ArchiveScene {
       this.presenceTarget === 1 &&
       this.looping &&
       !this.targetDetail &&
+      !this.isExportFocusActive() &&
       this.detail < 0.2 &&
       this.reveal >= 0.8 &&
       this.loaded &&
@@ -1446,6 +1457,8 @@ export class ArchiveScene {
     this.last = time;
     this.clock = time;
     if (!this.loaded) return;
+    const exportFocusActive = this.isExportFocusActive();
+    const targetDetail = this.targetDetail || exportFocusActive;
     const step = this.reduced ? 1 : Math.min(elapsed, .25) / 1.1;
     this.presence += Math.sign(this.presenceTarget - this.presence) * Math.min(step, Math.abs(this.presenceTarget - this.presence));
     this.renderer.domElement.style.opacity = String(THREE.MathUtils.clamp(this.presence / .16, 0, 1));
@@ -1529,7 +1542,7 @@ export class ArchiveScene {
       !cinematic &&
       !this.reduced &&
       this.targetReveal > 0 &&
-      !this.targetDetail &&
+      !targetDetail &&
       this.detail < 0.01 &&
       this.returnY === null &&
       !aligningCopy &&
@@ -1538,16 +1551,19 @@ export class ArchiveScene {
       ? 0
       : THREE.MathUtils.lerp(
           this.idleGain,
-          idle ? (this.playfield.enabled ? (this.playfield.breathing && !this.relayActive ? 1 - this.playfield.bands.activity : 0) : 1) : 0,
-          1 - Math.exp(-dt * (idle ? 0.8 : 4)),
+          idle ? (this.playfield.enabled ? (this.playfield.breathing && !this.relayActive ? 1 - this.playfield.bands.activity : 0) : this.djSpectrum?.active ? 0 : 1) : 0,
+          1 - Math.exp(-dt * (idle ? this.djSpectrum?.active ? 8 : 0.8 : 4)),
         );
     this.pulseGain = THREE.MathUtils.lerp(
       this.pulseGain,
-      this.targetDetail || this.returnY !== null || aligningCopy ? 0 : 1,
+      targetDetail || this.returnY !== null || aligningCopy ? 0 : 1,
       1 - Math.exp(-dt * 8),
     );
     const play = this.playfield;
-    const activePlay = !cinematic && !this.targetDetail && play.enabled;
+    const activePlay = !cinematic && !targetDetail && play.enabled;
+    const liveDjSpectrum = !cinematic && !targetDetail && !this.reduced && this.djSpectrum?.bins.some(level => level > .012)
+      ? this.djSpectrum.bins
+      : null;
     const rhythm = this.rhythm.update(activePlay && !this.reduced ? play.bands : quietBands(), time, dt, this.rhythmStyle);
     this.flatMix += ((activePlay ? play.flatten : 0) - this.flatMix) * (this.reduced ? 1 : 1 - Math.exp(-dt * 4));
     this.subduedIndex.value = Math.max(Number(this.selectedIndexOnly), this.flatMix);
@@ -1565,6 +1581,19 @@ export class ArchiveScene {
       spectrumPoint.set((lane - 2) * COLUMN_SPACING - trackX, -4.6, (row - 15.5) * ROW_SPACING + this.rail.value).project(this.camera);
       return (spectrumPoint.x + 1) / 2;
     };
+    // One lane is a full diagonal strip of file models (rows run along +Z).
+    // The strip immediately in front of the raised lane is one step toward
+    // the camera on X; no other lane receives player-frequency motion.
+    const spectrumLane = cameraFacingSpectrumLane(
+      this.laneFocus.value,
+      this.camera.position.x >= this.cameraAim.x,
+    );
+    const spectrumXs = this.cells
+      .filter(cell => cell.lane === spectrumLane)
+      .map(cell => screenX(cell.row, spectrumLane))
+      .filter(x => x >= 0 && x <= 1);
+    const spectrumLeft = spectrumXs.length ? Math.min(...spectrumXs) : 0;
+    const spectrumRight = spectrumXs.length ? Math.max(...spectrumXs) : 1;
     const field = (row: number, lane: number) => {
       if (cinematic)
         return cinematicField(
@@ -1600,11 +1629,16 @@ export class ArchiveScene {
         pulseHeight = THREE.MathUtils.clamp(ripple, -0.6, 0.6) * this.pulseGain;
       }
       const distance = row - this.shoulder.value;
+      const x = screenX(row, lane);
+      const spectrum = liveDjSpectrum && lane === spectrumLane
+        ? liveDjSpectrum[djSpectrumBandAtScreenX(x, spectrumLeft, spectrumRight, liveDjSpectrum.length)]
+        : 0;
       return (
         (height +
         settlingWave(distance, 26.56) *
           columnStrength(lane, this.laneFocus.value)) * (1 - this.flatMix) + breathing + pulseHeight +
-        (activePlay && !this.reduced ? rhythmDisplacement(row, lane, time, play.bands, play.strength, rhythm, screenX(row, lane)) : 0) +
+        (activePlay && !this.reduced ? rhythmDisplacement(row, lane, time, play.bands, play.strength, rhythm, x) : 0) +
+        djSpectrumLaneDisplacement(lane, spectrumLane, spectrum) +
         (this.relayLifts.get(cellKey({ row, lane })) ?? 0)
       );
     };
@@ -1617,7 +1651,7 @@ export class ArchiveScene {
         this.returnY = null;
         damp(
           this.lift,
-          this.targetDetail
+          targetDetail
             ? INSPECTION_LIFT
             : this.outgoing.some(
                   (o) =>
@@ -1630,7 +1664,7 @@ export class ArchiveScene {
           this.reduced
             ? 35
             : this.deferSelectionPulse &&
-                !this.targetDetail &&
+                !targetDetail &&
                 this.lift.value < 0.4
               ? 7.6
               : 4.2,
@@ -1638,7 +1672,7 @@ export class ArchiveScene {
         );
       }
     }
-    const cameraTarget = this.targetDetail
+    const cameraTarget = targetDetail
       ? ease((this.lift.value - 0.8) / 2.4)
       : this.returnY !== null
         ? this.detail
@@ -1649,8 +1683,14 @@ export class ArchiveScene {
     const detail = this.detail;
     this.decryption.update(dt, detail > .78 && this.lift.value > 3.3, this.reduced,
       cinematic ? shot + 5 : undefined);
+    damp(this.exportFocusClarity, exportFocusActive ? 1 : 0, this.reduced ? 35 : 4.5, dt);
     this.appearance.apply(this.model, ease(this.lift.value / 0.4));
     this.appearance.setClarity(this.model, this.decryption.clarity);
+    // The export display should retain its frosted entrance, then resolve into
+    // a crisp archive screen while the export view is active.
+    this.exportScreenClarity.value = exportFocusActive
+      ? this.exportFocusClarity.value
+      : this.decryption.clarity;
     // Reference 26.92–27.76: the array travels horizontally into a white field.
     const entry = cinematic ? ease((shot - 21.9) / 0.86) : this.reveal;
     const entranceTime = THREE.MathUtils.clamp((shot - 21.92) / 0.75, 0, 1);
@@ -1692,7 +1732,7 @@ export class ArchiveScene {
     if (
       this.pendingPulse &&
       !cinematic &&
-      !this.targetDetail &&
+      !targetDetail &&
       this.targetReveal
     ) {
       const selectedY = selectedBase + this.lift.value;
@@ -1839,7 +1879,7 @@ export class ArchiveScene {
     const framing = archiveFraming(this.container.clientWidth, this.container.clientHeight, span, detail,
       this.container.closest<HTMLElement>("[data-layout]")?.dataset.layout === "compact");
     const stage = this.container.closest<HTMLElement>("#stage");
-    if (this.isExportArchive() && stage?.dataset.playlistExporting === "true" && stage.dataset.djDrawerOpen === "true") {
+    if (this.isExportFocusActive() && stage) {
       // Center the export display in the scene area left exposed by the drawer.
       const drawer = stage.querySelector<HTMLElement>(".wb-playlist-drawer");
       const stageWidth = stage.getBoundingClientRect().width;
@@ -2111,6 +2151,13 @@ export class ArchiveScene {
       idleGain: this.idleGain,
       flatten: this.flatMix,
       spectrumActivity: this.playfield.bands.activity,
+      djSpectrum: {
+        active: this.djSpectrum?.active ?? false,
+        peak: this.djSpectrum ? Math.max(...this.djSpectrum.bins) : 0,
+        bins: this.djSpectrum ? Array.from(this.djSpectrum.bins, level => Math.round(level * 100) / 100) : [],
+        targetLane: cameraFacingSpectrumLane(this.laneFocus.value, this.camera.position.x >= this.cameraAim.x),
+        visibleCells: this.drawnCells.filter(cell => cell.lane === cameraFacingSpectrumLane(this.laneFocus.value, this.camera.position.x >= this.cameraAim.x)).length,
+      },
       selectedIndexDim: this.model.children.find(child => child.userData.surface === "Index_Inlay")?.userData.subduedIndex?.value,
       returningIndexDims: this.outgoing.map(o => ({ cell: o.cell, dim: o.group.children.find(child => child.userData.surface === "Index_Inlay")?.userData.subduedIndex?.value })),
       cameraDistance: this.camera.position.distanceTo(this.cameraAim),

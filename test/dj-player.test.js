@@ -74,7 +74,8 @@ test("audio duration and seek are taken from the HTMLAudioElement", async () => 
 test("restores the last queue paused and seeks to its saved position only after explicit play", async () => {
   const audio = new MockAudio();
   const requested = [];
-  const player = new DjPlayer({ audio, resolveAudioUrl: async id => { requested.push(id); return `https://audio/${id}.mp3`; } });
+  let playRequested = 0;
+  const player = new DjPlayer({ audio, resolveAudioUrl: async id => { requested.push(id); return `https://audio/${id}.mp3`; }, onPlayRequested: () => { playRequested++; } });
   player.restoreQueue(tracks, 1, 54, 120);
   assert.equal(player.getState().track.id, "track-2");
   assert.equal(player.getState().status, "paused");
@@ -86,4 +87,5 @@ test("restores the last queue paused and seeks to its saved position only after 
   assert.equal(audio.currentTime, 54);
   assert.equal(player.getState().status, "playing");
   assert.deepEqual(requested, ["track-2"]);
+  assert.equal(playRequested, 1, "the media analyzer should resume synchronously from the explicit play gesture");
 });

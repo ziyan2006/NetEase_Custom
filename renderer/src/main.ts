@@ -139,6 +139,7 @@ let djAuthMessage = "请使用网易云扫码、Electron 官方登录，或粘�
 let djAuthUserId = "";
 let djQrImage = "";
 let djQrStatus = "";
+let djQrPresentation: "idle" | "loading" | "qr" | "verifying" | "authorized" | "error" = "idle";
 let djQrKey = "";
 let djQrTimer: number | undefined;
 let djQrRequesting = false;
@@ -733,10 +734,17 @@ function updateDjAccountModal() {
   status.textContent = djAuthStatus === "authenticated" ? "已登录" : djAuthStatus === "checking" ? "正在验证" : djAuthStatus === "expired" ? "需要重新登录" : "未登录";
   detail.textContent = djAuthStatus === "authenticated" ? `ACCOUNT ${djAuthUserId}` : djAuthStatus === "checking" ? "CHECKING SESSION" : djAuthStatus === "expired" ? "SESSION EXPIRED" : "GUEST SESSION";
   message.textContent = djAuthMessage;
+  const qrPanel = $(".dj-account-qr");
+  qrPanel.dataset.state = djQrPresentation;
+  qrPanel.dataset.motion = prefs.reduced ? "reduced" : "full";
   const image = $("#dj-account-qr") as HTMLImageElement;
   image.src = djQrImage;
   image.hidden = !djQrImage;
-  $("#dj-qr-status").textContent = djQrStatus;
+  image.setAttribute("aria-hidden", String(djAuthStatus === "authenticated"));
+  const qrStatus = $("#dj-qr-status");
+  qrStatus.textContent = djQrPresentation === "authorized"
+    ? "ACCESS AUTHORIZED · 网易云曲库已连接"
+    : djQrStatus;
   const logout = $("#dj-account-logout");
   logout.hidden = djAuthStatus !== "authenticated";
 }
@@ -747,6 +755,11 @@ function publishDjAccount(authenticated: boolean, userId = "") {
 }
 async function validateDjCookie(candidate = getNeteaseCookie()) {
   stopDjQrPolling();
+  if (djQrPresentation !== "verifying") {
+    djQrImage = "";
+    djQrPresentation = "idle";
+    djQrStatus = "";
+  }
   djAuthStatus = "checking";
   djAuthMessage = "正在向网易云验证账号并读取歌单权限…";
   djAuthUserId = "";
@@ -758,6 +771,8 @@ async function validateDjCookie(candidate = getNeteaseCookie()) {
     if (account.status === "invalid") {
       djAuthStatus = "guest";
       djAuthMessage = account.message;
+      djQrPresentation = "error";
+      djQrStatus = `授权未完成 · ${account.message}`;
       publishDjAccount(false);
       updateDjAccountButton();
       updateDjAccountModal();
@@ -766,6 +781,8 @@ async function validateDjCookie(candidate = getNeteaseCookie()) {
     djAuthStatus = "authenticated";
     djAuthUserId = account.userId;
     djAuthMessage = `账号验证成功，已读取 ${account.playlistCount} 个云端歌单。`;
+    djQrPresentation = "authorized";
+    djQrStatus = "授权成功 · 账号与曲库权限已验证。";
     publishDjAccount(true, account.userId);
     updateDjAccountButton();
     updateDjAccountModal();
@@ -774,6 +791,8 @@ async function validateDjCookie(candidate = getNeteaseCookie()) {
     const invalid = error instanceof Error && "status" in error && Number((error as Error & { status?: unknown }).status) === 401;
     djAuthStatus = invalid ? "expired" : "guest";
     djAuthMessage = error instanceof Error ? error.message : "账号验证失败，请重试。";
+    djQrPresentation = "error";
+    djQrStatus = `授权未完成 · ${djAuthMessage}`;
     publishDjAccount(false);
     updateDjAccountButton();
     updateDjAccountModal();
@@ -783,6 +802,7 @@ async function validateDjCookie(candidate = getNeteaseCookie()) {
 async function startDjQrLogin() {
   stopDjQrPolling();
   djQrImage = "";
+  djQrPresentation = "loading";
   djQrStatus = "正在向网易云获取登录二维码…";
   djAuthMessage = "请用网易云音乐 App 扫描二维码。";
   updateDjAccountModal();
@@ -792,11 +812,13 @@ async function startDjQrLogin() {
     if (!response.ok || !payload.unikey || !payload.qrImg) throw new Error(payload.message || "网易云未能生成登录二维码。");
     djQrKey = payload.unikey;
     djQrImage = payload.qrImg;
+    djQrPresentation = "qr";
     djQrStatus = "请使用网易云音乐 App 扫码；确认前请勿关闭此窗口。";
     updateDjAccountModal();
     djQrTimer = window.setInterval(() => { void pollDjQrLogin(); }, 2000);
     void pollDjQrLogin();
   } catch (error) {
+    djQrPresentation = "error";
     djQrStatus = error instanceof Error ? error.message : "二维码获取失败，请稍后重试。";
     updateDjAccountModal();
   }
@@ -810,14 +832,16 @@ async function pollDjQrLogin() {
     const code = Number(payload.code);
     if (code === 800) {
       stopDjQrPolling();
+      djQrPresentation = "error";
       djQrStatus = "二维码已过期，请重新获取。";
-    } else if (code === 801) djQrStatus = "等待扫码…";
-    else if (code === 802) djQrStatus = "已扫码，请在手机上确认登录。";
+    } else if (code === 801) { djQrPresentation = "qr"; djQrStatus = "等待扫码…"; }
+    else if (code === 802) { djQrPresentation = "qr"; djQrStatus = "已扫码，请在手机上确认登录。"; }
     else if (code === 803) {
       const cookie = cookieFromQrPayload(payload);
       stopDjQrPolling();
-      if (!cookie) djQrStatus = "网易云未返回可验证的 Cookie。请粘贴 MUSIC_U，或改用 Electron 官方登录。";
+      if (!cookie) { djQrPresentation = "error"; djQrStatus = "网易云未返回可验证的 Cookie。请粘贴 MUSIC_U，或改用 Electron 官方登录。"; }
       else {
+        djQrPresentation = "verifying";
         djQrStatus = "授权成功，正在验证账号…";
         updateDjAccountModal();
         await validateDjCookie(cookie);
@@ -825,8 +849,9 @@ async function pollDjQrLogin() {
       }
     } else if (code === 8821) {
       stopDjQrPolling();
+      djQrPresentation = "error";
       djQrStatus = "扫码暂不可用。请粘贴 MUSIC_U，或改用 Electron 官方登录。";
-    } else if (!response.ok) djQrStatus = "暂时无法查询扫码状态，请稍后重试。";
+    } else if (!response.ok) { djQrPresentation = "error"; djQrStatus = "暂时无法查询扫码状态，请稍后重试。"; }
     updateDjAccountModal();
   } catch {
     djQrStatus = "网络暂时无法查询扫码状态，正在重试…";
@@ -842,6 +867,9 @@ async function submitDjManualCookie() {
 function logoutDjAccount() {
   stopDjQrPolling();
   djAuthAdapter.logout();
+  djQrImage = "";
+  djQrPresentation = "idle";
+  djQrStatus = "账号已退出，可以重新登录。";
   djAuthStatus = "guest";
   djAuthUserId = "";
   djAuthMessage = "已退出网易云账号。";
@@ -853,7 +881,7 @@ function renderModal() {
   if (!modal) return;
   modalTransition?.dispose();
   if (modal === "account")
-    $("#modal-root").innerHTML = `<div class="modal-backdrop"><section class="terminal-modal dj-account-modal" role="dialog" aria-modal="true" aria-label="网易云账号登录"><div class="modal-top"><span>YESMUSIC / NETEASE ACCOUNT</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div><h2>网易云账号<small>登录入口</small></h2><div class="dj-account-status"><span class="dj-account-dot" aria-hidden="true"></span><strong id="dj-account-status"></strong><small id="dj-account-detail"></small></div><p id="dj-account-message"></p><div class="dj-account-qr" aria-live="polite"><img id="dj-account-qr" alt="网易云登录二维码" hidden/><small id="dj-qr-status">扫码状态尚未启动。</small></div><div class="dj-account-actions"><button data-action="dj-login-qr">获取扫码二维码 <span>↗</span></button>${window.electronAPI?.openNeteaseLogin ? '<button data-action="dj-login-official">在网易云官方窗口登录 <span>↗</span></button>' : '<button disabled title="此入口仅在桌面应用中可用">在网易云官方窗口登录 <span>桌面应用可用</span></button>'}</div><label class="dj-cookie-field" for="dj-manual-cookie">MUSIC_U / 手动登录<input id="dj-manual-cookie" type="password" autocomplete="off" placeholder="粘贴 MUSIC_U 或完整 Cookie"/></label><div class="dj-cookie-actions"><button data-action="dj-cookie-submit">验证并登录</button><button id="dj-account-logout" data-action="dj-logout" hidden>退出登录</button></div><p class="dj-account-note">凭据仅保存在本机应用的本地存储中，不会显示在页面或 URL 中。</p></section></div>`;
+    $("#modal-root").innerHTML = `<div class="modal-backdrop"><section class="terminal-modal dj-account-modal" role="dialog" aria-modal="true" aria-label="网易云账号登录"><div class="modal-top"><span>YESMUSIC / NETEASE ACCOUNT</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div><h2>网易云账号<small>登录入口</small></h2><div class="dj-account-status"><span class="dj-account-dot" aria-hidden="true"></span><strong id="dj-account-status"></strong><small id="dj-account-detail"></small></div><p id="dj-account-message"></p><div class="dj-account-qr" data-state="idle" data-motion="full" aria-live="polite"><div class="dj-qr-visual"><img id="dj-account-qr" alt="网易云登录二维码" hidden/><div class="dj-qr-authorized" aria-hidden="true"><span class="dj-auth-kicker">YESMUSIC / ACCESS</span><span class="dj-auth-seal"><svg viewBox="0 0 64 64" aria-hidden="true"><path d="m18 33 9 9 20-21"/></svg></span><strong>授权成功</strong><small>ACCOUNT VERIFIED</small></div></div><small id="dj-qr-status">扫码状态尚未启动。</small></div><div class="dj-account-actions"><button data-action="dj-login-qr">获取扫码二维码 <span>↗</span></button>${window.electronAPI?.openNeteaseLogin ? '<button data-action="dj-login-official">在网易云官方窗口登录 <span>↗</span></button>' : '<button disabled title="此入口仅在桌面应用中可用">在网易云官方窗口登录 <span>桌面应用可用</span></button>'}</div><label class="dj-cookie-field" for="dj-manual-cookie">MUSIC_U / 手动登录<input id="dj-manual-cookie" type="password" autocomplete="off" placeholder="粘贴 MUSIC_U 或完整 Cookie"/></label><div class="dj-cookie-actions"><button data-action="dj-cookie-submit">验证并登录</button><button id="dj-account-logout" data-action="dj-logout" hidden>退出登录</button></div><p class="dj-account-note">凭据仅保存在本机应用的本地存储中，不会显示在页面或 URL 中。</p></section></div>`;
   else
   $("#modal-root").innerHTML =
     tr`<div class="modal-backdrop"><section class="terminal-modal ${modal === "settings" ? "settings-modal" : ""}" role="dialog" aria-modal="true" aria-label="${modal === "settings" ? tr("系统设置") : modal === "saved" ? tr("收藏档案") : tr("档案检索")}"><div class="modal-top"><span>${isDjPrototype ? "YESMUSIC" : "RHINE LAB"} / ${modal === "settings" ? "SYSTEM PREFERENCES" : "ARCHIVE DIRECTORY"}</span><button data-action="close-modal" aria-label="关闭窗口">CLOSE <span>×</span></button></div>${modal === "settings" ? settingsMarkup() : tr`<h2>${modal === "saved" ? "SAVED ARCHIVES" : "ARCHIVE INDEX"}<small>${modal === "saved" ? tr("收藏档案") : tr("内部档案检索")}</small></h2><div class="search-field"><span>⌕</span><input id="archive-search" type="search" autocomplete="off" placeholder="输入档案编号、名称或${isDjPrototype ? "模块" : "科室"}" aria-label="检索档案"/><span class="key">ESC</span></div><div class="category-filters">${categories.map((c, i) => `<button data-filter="${escapeHtml(c)}" class="${i === 0 ? "active" : ""}">${escapeHtml(c)}</button>`).join("")}</div><div class="result-header"><span>FILE / 档案</span><span>${isDjPrototype ? "MODULE / 模块" : "DEPARTMENT / 科室"}</span><span>ACCESS</span></div><div id="search-results" class="search-results"></div><div class="modal-bottom"><span id="result-count"></span><span>${isDjPrototype ? "YESMUSIC DJ WORKSPACE · MODULE INDEX" : "INTERNAL DATABASE <i>●</i> CONNECTED"}</span></div>`}</section></div>`;
@@ -1214,6 +1242,7 @@ function frame(ms: number) {
   paintTheme(theme);
   viewer?.setTheme(theme);
   playground?.tick(time);
+  scene?.setDjSpectrum(workbench?.getDjSpectrum() ?? null);
   const cinema =
     mode === "boot" && ready
       ? bootFrame(frozenTime ?? time - bootStart)

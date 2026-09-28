@@ -6,6 +6,7 @@ import { isDjPrototype, wallpaperHost, type WallpaperProperties } from "./wallpa
 import { NeteaseApiError, yesmusicApi, type NeteasePlaylist, type NeteaseTrack } from "./yesmusic-api";
 import { createPlaylistExportState, failPlaylistExport, type PlaylistExportState } from "./dj-export.js";
 import { DjPlayer } from "./dj-player.js";
+import { DjSpectrumAnalyzer } from "./dj-spectrum.js";
 import { DjAgentPanel } from "./dj-agent";
 import { dayKey, durationText, idleTimer, parseTarget, restoreTimer, timerLeft } from "./workbench-state";
 import "./workbench.css";
@@ -52,6 +53,7 @@ export class Workbench {
   private playlistsRequestId = 0;
   private detailRequestId = 0;
   private player: DjPlayer;
+  private djSpectrum?: DjSpectrumAnalyzer;
   private playerState: DjPlayerState = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
   private renderedPlayerKey = "";
   private playerTrackId = "";
@@ -79,7 +81,8 @@ export class Workbench {
   private playlistExportState: PlaylistExportState | null = null;
   private playlistExportSnapshot: PersistedPlaylistExport | null = null;
   private exportResumeInFlight = false;
-  private playlistExportConfirmTrigger?: HTMLButtonElement;
+  private playlistExportConfirmTarget: NeteasePlaylist | null = null;
+  private playlistExportConfirmFromList = false;
   private onlineSearchQuery = "";
   private onlineSearchSubmitted = false;
   private onlineSearchNotice = "";
@@ -121,8 +124,13 @@ export class Workbench {
     if (isDjPrototype) this.restorePlaylistExportSnapshot();
     this.player = new DjPlayer({
       resolveAudioUrl: (trackId: string) => yesmusicApi.getSongUrl(trackId),
+      onPlayRequested: () => this.djSpectrum?.resume(),
       onChange: (state: DjPlayerState) => this.onPlayerState(state),
     });
+    if (isDjPrototype) {
+      try { this.djSpectrum = new DjSpectrumAnalyzer(this.player.audio); }
+      catch (error) { console.warn("DJ spectrum analyzer unavailable; audio playback remains enabled.", error); }
+    }
     if (isDjPrototype) this.restorePlayerSnapshot();
     if (isDjPrototype) this.agentPanel = new DjAgentPanel({
       openSearch: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search"),
@@ -242,11 +250,19 @@ export class Workbench {
         const cancelExport = this.playlistExportConfirm;
         this.pendingTrack = null;
         this.deleteConfirmId = "";
+        const returnToList = this.playlistExportConfirmFromList;
+        const returnPlaylistId = this.playlistExportConfirmTarget?.id ?? this.selectedPlaylistId;
         this.playlistExportConfirm = false;
+        this.playlistExportConfirmTarget = null;
+        this.playlistExportConfirmFromList = false;
         this.playerPickerOpen = false;
         this.renderRightDrawer();
         this.renderDjPlayer();
-        requestAnimationFrame(() => (cancelExport ? this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']") : this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-track-add']") ?? this.root.querySelector<HTMLButtonElement>("[data-dj-action='player-add']"))?.focus({ preventScroll: true }));
+        requestAnimationFrame(() => (cancelExport
+          ? returnToList
+            ? this.root.querySelector<HTMLButtonElement>(`[data-dj-action='playlist-card-export'][data-id='${CSS.escape(returnPlaylistId)}']`)
+            : this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']")
+          : this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-track-add']") ?? this.root.querySelector<HTMLButtonElement>("[data-dj-action='player-add']"))?.focus({ preventScroll: true }));
         return;
       }
       if (event.key === "Escape" && this.rightDrawerOpen) {
@@ -576,7 +592,8 @@ export class Workbench {
         ${this.renderPlaylistExportBanner()}
         ${this.playlistCreateOpen ? `<form class="wb-playlist-create-form"><label for="dj-playlist-name">新歌单名称</label><input id="dj-playlist-name" maxlength="36" autocomplete="off" placeholder="输入歌单名称"/><div><button type="button" data-dj-action="playlist-create-cancel">取消</button><button type="button" data-dj-action="playlist-create-confirm" ${this.mutationBusy ? "disabled" : ""}>创建歌单</button></div></form>` : ""}
         ${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}
-        ${this.deleteConfirmId ? `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / DELETE</span><h3 id="playlist-delete-title">删除这份歌单？</h3><strong>${escapeHtml(this.playlists.find(item => item.id === this.deleteConfirmId)?.name ?? "")}</strong><p>删除会直接修改网易云账号中的歌单。</p><div><button data-dj-action="playlist-delete-cancel">取消</button><button data-dj-action="playlist-delete-confirm" ${this.mutationBusy ? "disabled" : ""}>确认删除</button></div></section></div>` : ""}`;
+        ${this.deleteConfirmId ? `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="alertdialog" aria-modal="true" aria-labelledby="playlist-delete-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / DELETE</span><h3 id="playlist-delete-title">删除这份歌单？</h3><strong>${escapeHtml(this.playlists.find(item => item.id === this.deleteConfirmId)?.name ?? "")}</strong><p>删除会直接修改网易云账号中的歌单。</p><div><button data-dj-action="playlist-delete-cancel">取消</button><button data-dj-action="playlist-delete-confirm" ${this.mutationBusy ? "disabled" : ""}>确认删除</button></div></section></div>` : ""}
+        ${this.playlistExportConfirm && this.playlistExportConfirmTarget ? this.renderPlaylistExportConfirmation(this.playlistExportConfirmTarget) : ""}`;
       this.renderPlaylistCards();
       return;
     }
@@ -605,7 +622,7 @@ export class Workbench {
         ${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}
       </div>
       ${this.pendingTrack && !this.playerPickerOpen ? this.renderTrackAddConfirmation() : ""}
-      ${this.playlistExportConfirm ? this.renderPlaylistExportConfirmation(playlist) : ""}`;
+      ${this.playlistExportConfirm ? this.renderPlaylistExportConfirmation(this.playlistExportConfirmTarget ?? playlist) : ""}`;
   }
   private renderPlaylistExportBanner() {
     const state = this.playlistExportState;
@@ -619,21 +636,23 @@ export class Workbench {
   private renderPlaylistExportConfirmation(playlist: NeteasePlaylist) {
     return `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="dialog" aria-modal="true" aria-labelledby="playlist-export-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / EXPORT</span><h3 id="playlist-export-title">确认导出歌单？</h3><strong>${escapeHtml(playlist.name)}</strong><p>将从网易云读取完整曲目并导出到所选目录。确认前不会发起导出或写入文件；开始后可关闭此面板，任务会继续。</p><label class="wb-playlist-export-target">目标目录<code>${escapeHtml(this.outputRoot)}</code></label>${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}<div><button data-dj-action="playlist-export-cancel">取消</button><button data-dj-action="playlist-export-confirm" ${this.mutationBusy ? "disabled" : ""}>确认导出</button></div></section></div>`;
   }
-  private openPlaylistExportConfirmation(trigger?: HTMLButtonElement) {
+  private openPlaylistExportConfirmation(target?: NeteasePlaylist) {
     if (!this.accountUserId) {
       this.playlistDrawerNotice = "请先登录并验证网易云账号。";
       this.renderRightDrawer();
       document.querySelector<HTMLButtonElement>(".dj-account-button")?.click();
       return;
     }
-    if (!this.playlistDetail || this.playlistDetailLoading) {
+    const playlist = target ?? this.playlistDetail;
+    if (!playlist || (!target && this.playlistDetailLoading)) {
       this.playlistDrawerNotice = "歌单详情尚未载入完成，请稍后重试。";
       this.renderRightDrawer();
       return;
     }
     if (this.playlistExportState?.phase === "running") return;
     this.playlistExportConfirm = true;
-    this.playlistExportConfirmTrigger = trigger ?? this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']") ?? undefined;
+    this.playlistExportConfirmTarget = playlist;
+    this.playlistExportConfirmFromList = Boolean(target);
     this.playlistDrawerNotice = "";
     this.renderRightDrawer();
     requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export-cancel']")?.focus({ preventScroll: true }));
@@ -739,6 +758,9 @@ export class Workbench {
     }
     this.renderDjPlayer();
     if (this.rightDrawerOpen && this.rightDrawerMode === "search" && (trackId !== previousTrackId || state.status !== previousStatus)) this.renderOnlineSearchResults();
+  }
+  getDjSpectrum() {
+    return this.djSpectrum?.read(this.playerState.status === "playing") ?? null;
   }
   private restorePlayerSnapshot() {
     try {
@@ -877,11 +899,10 @@ export class Workbench {
     if (action === "playlist-card-export") {
       const id = button.dataset.id ?? "";
       if (!id) return;
-      this.playlistDetailOpen = true;
+      const playlist = this.playlists.find(item => item.id === id);
+      if (!playlist) return;
       this.playlistDrawerNotice = "";
-      await this.loadPlaylistDetail(id);
-      if (!this.playlistDetail || this.playlistDetail.id !== id || this.playlistDetailLoading) return;
-      this.openPlaylistExportConfirmation(this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']") ?? undefined);
+      this.openPlaylistExportConfirmation(playlist);
       return;
     }
     if (action === "playlist-back") {
@@ -994,18 +1015,24 @@ export class Workbench {
       return;
     }
     if (action === "playlist-export") {
-      this.openPlaylistExportConfirmation(button);
+      this.openPlaylistExportConfirmation();
       return;
     }
     if (action === "playlist-export-cancel") {
+      const returnToList = this.playlistExportConfirmFromList;
+      const returnPlaylistId = this.playlistExportConfirmTarget?.id ?? this.selectedPlaylistId;
       this.playlistExportConfirm = false;
+      this.playlistExportConfirmTarget = null;
+      this.playlistExportConfirmFromList = false;
       this.playlistDrawerNotice = "";
       this.renderRightDrawer();
-      requestAnimationFrame(() => this.playlistExportConfirmTrigger?.focus({ preventScroll: true }));
+      requestAnimationFrame(() => (returnToList
+        ? this.root.querySelector<HTMLButtonElement>(`[data-dj-action='playlist-card-export'][data-id='${CSS.escape(returnPlaylistId)}']`)
+        : this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']"))?.focus({ preventScroll: true }));
       return;
     }
     if (action === "playlist-export-confirm") {
-      const playlist = this.playlistDetail;
+      const playlist = this.playlistExportConfirmTarget ?? this.playlistDetail;
       const outputRoot = this.outputRoot.trim();
       if (!playlist || !outputRoot || /[\u0000-\u001f]/.test(outputRoot)) {
         this.playlistDrawerNotice = !outputRoot ? "请先在“导出根目录”设置中填写目标目录。" : "目标目录含有无效控制字符。";
@@ -1014,6 +1041,8 @@ export class Workbench {
         return;
       }
       this.playlistExportConfirm = false;
+      this.playlistExportConfirmTarget = null;
+      this.playlistExportConfirmFromList = false;
       const jobId = globalThis.crypto?.randomUUID?.() ?? `dj-export-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
       const initialState = createPlaylistExportState(playlist, "running");
       this.playlistExportSnapshot = {
@@ -1175,6 +1204,14 @@ export class Workbench {
     const current = this.root.querySelector<HTMLElement>("#dj-playlist-export-status");
     if (current) current.outerHTML = this.renderPlaylistExportBanner();
     else if (this.rightDrawerOpen && this.rightDrawerMode === "playlist") this.renderRightDrawer();
+    const exportRunning = state.phase === "running";
+    this.root.querySelectorAll<HTMLButtonElement>("[data-dj-action='playlist-card-export']").forEach(button => {
+      button.disabled = exportRunning;
+    });
+    const detailExport = this.root.querySelector<HTMLButtonElement>("[data-dj-action='playlist-export']");
+    if (detailExport) {
+      detailExport.disabled = this.playlistsLoading || this.playlistDetailLoading || exportRunning || !this.accountUserId;
+    }
   }
   private restorePlaylistExportSnapshot() {
     try {
