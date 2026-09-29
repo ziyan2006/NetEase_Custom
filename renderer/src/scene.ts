@@ -40,7 +40,7 @@ import { labelMarkSvg } from "./brand";
 import { isDjPrototype } from "./wallpaper";
 import { archiveFraming } from "./viewport-layout";
 import { cameraFacingSpectrumLane, djSpectrumBandAtScreenX, djSpectrumLaneDisplacement, type PlayerSpectrumFrame } from "./dj-spectrum.js";
-import { djCoverSlots, DJ_COVER_RADIUS, type DjCoverSlot } from "./dj-cover-lane.js";
+import { djCoverLaneState, djCoverSlots, djCoverStepDirection, djVisibleCoverSlots, DJ_COVER_RADIUS, type DjCoverSlot } from "./dj-cover-lane.js";
 import type { NeteaseTrack } from "./yesmusic-api";
 import { ArchiveDrag, ArchivePlaneMomentum, type DragAxis, type DragProjection, type DragPosition } from "./archive-drag";
 import { assetUrl as publicAsset } from "./asset-url";
@@ -62,6 +62,21 @@ const ease = (t: number) => {
   t = THREE.MathUtils.clamp(t, 0, 1);
   return t * t * t * (t * (t * 6 - 15) + 10);
 };
+type DjQueueView = { queue: NeteaseTrack[]; index: number; playlistRevision: number; direction?: -1 | 0 | 1 };
+type DjCoverTransition = {
+  phase: "exit" | "enter" | "slide";
+  startedAt: number;
+  targetView: DjQueueView;
+  startOffsets?: Map<number, number>;
+  sourceView?: DjQueueView;
+  direction?: -1 | 1;
+  queuedView?: DjQueueView;
+};
+const DJ_COVER_DROP_DISTANCE = 84;
+const DJ_COVER_EXIT_DURATION = .72;
+const DJ_COVER_ENTER_DURATION = .78;
+const DJ_COVER_WAVE_STAGGER = .56;
+const DJ_COVER_SLIDE_DURATION = .58;
 const exportCoreSurfaces = new Set([
   "Internal_Ceramic",
   "Optical_Diffuser",
@@ -154,7 +169,10 @@ export class ArchiveScene {
   setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
   private djSpectrum: PlayerSpectrumFrame | null = null;
-  private djQueueView: { queue: NeteaseTrack[]; index: number } | null = null;
+  private djQueueView: DjQueueView | null = null;
+  private djArchiveCoverLanePinned = false;
+  private djArchiveCoverLaneReturning = false;
+  private djCoverTransition: DjCoverTransition | null = null;
   private djCoverSlots: DjCoverSlot[] = [];
   private djCoverCards: THREE.Group[] = [];
   private djCoverTextures = new Map<string, THREE.Texture>();
@@ -172,11 +190,160 @@ export class ArchiveScene {
     this.playfield = { enabled, bands, strength, flatten, target, breathing };
   }
   setDjSpectrum(frame: PlayerSpectrumFrame | null) { this.djSpectrum = frame; }
-  setDjQueue(view: { queue: NeteaseTrack[]; index: number } | null) {
-    if (this.djQueueView === view) return;
+  setDjArchiveCoverLanePinned(enabled: boolean) {
+    if (enabled) {
+      if (this.djArchiveCoverLanePinned && !this.djArchiveCoverLaneReturning) return;
+      this.djArchiveCoverLanePinned = true;
+      this.djArchiveCoverLaneReturning = false;
+    } else {
+      if (!this.djArchiveCoverLanePinned || this.djArchiveCoverLaneReturning) return;
+      // Keep the cover lane mounted while the detail camera returns. The
+      // regular workbench state takes over once it is visible.
+      this.djArchiveCoverLaneReturning = true;
+    }
+    this.renderState.invalidate();
+  }
+  setDjQueue(view: DjQueueView | null) {
+    const activeTransition = this.djCoverTransition;
+    if (activeTransition && (view === activeTransition.targetView ||
+      (activeTransition.phase === "slide" && view === activeTransition.queuedView))) return;
+    if (!activeTransition && this.djQueueView === view) return;
+    const previousQueue = this.djQueueView?.queue ?? [];
+    const nextQueue = view?.queue ?? [];
+    const previousIds = previousQueue.map(track => track.id).sort();
+    const nextIds = nextQueue.map(track => track.id).sort();
+    const samePlaylistContents = previousIds.length === nextIds.length && previousIds.every((id, index) => id === nextIds[index]);
+    const playlistChanged = Boolean(view && previousQueue.length && nextQueue.length &&
+      (view.playlistRevision !== this.djQueueView?.playlistRevision || !samePlaylistContents));
+    if (activeTransition && view) {
+      if (activeTransition.phase === "slide") {
+        if (playlistChanged || view.index !== activeTransition.targetView.index) activeTransition.queuedView = view;
+        else activeTransition.targetView = view;
+        this.prepareDjCoverView(view);
+        this.renderState.invalidate();
+        return;
+      }
+      if (view.playlistRevision === activeTransition.targetView.playlistRevision) {
+        activeTransition.targetView = view;
+        if (activeTransition.phase === "enter") {
+          this.djQueueView = view;
+          this.syncDjCoverSlots();
+        } else this.prepareDjCoverView(view);
+        this.renderState.invalidate();
+        return;
+      }
+      if (activeTransition.phase === "exit") {
+        activeTransition.targetView = view;
+        this.prepareDjCoverView(view);
+        this.renderState.invalidate();
+        return;
+      }
+      if (this.djQueueView?.queue.length && view.queue.length) {
+        this.djCoverTransition = {
+          phase: "exit",
+          startedAt: performance.now() / 1000,
+          targetView: view,
+          startOffsets: this.captureDjCoverOffsets(),
+        };
+        this.prepareDjCoverView(view);
+        this.renderState.invalidate();
+        return;
+      }
+    }
+    const canAnimate = !this.reduced && this.djCoverCards.length > 0;
+    if (playlistChanged && canAnimate) {
+      this.djCoverTransition = {
+        phase: "exit",
+        startedAt: performance.now() / 1000,
+        targetView: view!,
+        startOffsets: this.captureDjCoverOffsets(),
+      };
+      this.prepareDjCoverView(view!);
+      this.renderState.invalidate();
+      return;
+    }
+    const direction = this.djQueueView && view && previousQueue.length && nextQueue.length && !playlistChanged
+      ? view.direction || djCoverStepDirection(this.djQueueView.index, view.index, Math.min(previousQueue.length, nextQueue.length))
+      : 0;
+    if (direction && canAnimate) {
+      this.djCoverTransition = {
+        phase: "slide",
+        startedAt: performance.now() / 1000,
+        sourceView: this.djQueueView!,
+        targetView: view!,
+        direction,
+      };
+      this.prepareDjCoverView(view!);
+      this.renderState.invalidate();
+      return;
+    }
+    this.djCoverTransition = null;
     this.djQueueView = view;
     this.syncDjCoverSlots();
     this.renderState.invalidate();
+  }
+  private captureDjCoverOffsets() {
+    const offsets = new Map<number, number>();
+    for (const card of this.djCoverCards) {
+      const cell = card.userData.archiveCell as ArchiveCell | undefined;
+      if (cell && card.visible) offsets.set(cell.row, Number(card.userData.coverMotionOffsetY) || 0);
+    }
+    return offsets;
+  }
+  private prepareDjCoverView(view: DjQueueView) {
+    for (const slot of djCoverSlots(view.queue.length, view.index, 0, 0)) {
+      const track = view.queue[slot.trackIndex];
+      if (track) this.coverTexture(track.coverUrl);
+    }
+  }
+  private advanceDjCoverTransition(now: number) {
+    const transition = this.djCoverTransition;
+    if (!transition) return;
+    if (this.reduced) {
+      this.djQueueView = transition.queuedView ?? transition.targetView;
+      this.djCoverTransition = null;
+      this.syncDjCoverSlots();
+      return;
+    }
+    if (transition.phase === "slide") {
+      if (now - transition.startedAt < DJ_COVER_SLIDE_DURATION) {
+        this.renderState.invalidate();
+        return;
+      }
+      this.djQueueView = transition.targetView;
+      const queuedView = transition.queuedView;
+      this.djCoverTransition = null;
+      this.syncDjCoverSlots();
+      if (queuedView) this.setDjQueue(queuedView);
+      this.renderState.invalidate();
+      return;
+    }
+    const duration = transition.phase === "exit" ? DJ_COVER_EXIT_DURATION : DJ_COVER_ENTER_DURATION;
+    if (now - transition.startedAt < DJ_COVER_WAVE_STAGGER + duration) {
+      this.renderState.invalidate();
+      return;
+    }
+    if (transition.phase === "exit") {
+      this.djQueueView = transition.targetView;
+      this.syncDjCoverSlots();
+      this.djCoverTransition = { phase: "enter", startedAt: now, targetView: transition.targetView };
+      this.renderState.invalidate();
+    } else this.djCoverTransition = null;
+  }
+  private djCoverMotionOffset(row: number, position: number, now: number) {
+    const transition = this.djCoverTransition;
+    if (!transition) return 0;
+    position = THREE.MathUtils.clamp(position, 0, 1);
+    const reverse = transition.phase === "enter";
+    const phase = reverse ? 1 - position : position;
+    const delay = phase * DJ_COVER_WAVE_STAGGER;
+    const duration = reverse ? DJ_COVER_ENTER_DURATION : DJ_COVER_EXIT_DURATION;
+    const progress = THREE.MathUtils.clamp((now - transition.startedAt - delay) / duration, 0, 1);
+    const from = transition.startOffsets?.get(row) ?? (reverse ? -DJ_COVER_DROP_DISTANCE : 0);
+    const to = reverse ? 0 : -DJ_COVER_DROP_DISTANCE;
+    const offset = THREE.MathUtils.lerp(from, to, ease(progress));
+    const ripple = Math.sin(progress * Math.PI) * Math.sin((position * 3.5 - (reverse ? -progress : progress) * 2) * Math.PI) * .42;
+    return offset + ripple;
   }
   private coverSource(raw: string | null) {
     if (!raw) return null;
@@ -254,43 +421,29 @@ export class ArchiveScene {
     const edgeSource = this.model.children.find(child => child.userData.surface === "Ivory_Edges") as THREE.Mesh;
     const edgeGeometry = edgeSource.geometry.clone().scale(1, 1, .22);
     const glassMaterial = new THREE.MeshPhysicalMaterial({
-      color: "#f1eee7", roughness: .38, metalness: 0,
-      transmission: .48, thickness: .10, ior: 1.38,
-      transparent: true, opacity: .52, depthWrite: false,
-      attenuationColor: new THREE.Color("#e6e2d9"), attenuationDistance: 2.4,
+      color: "#faf8f3", roughness: .3, metalness: 0,
+      transmission: .72, thickness: .06, ior: 1.38,
+      transparent: true, opacity: .34, depthWrite: false,
+      attenuationColor: new THREE.Color("#f0ede6"), attenuationDistance: 3.8,
       clearcoat: .24, clearcoatRoughness: .3,
     });
     const edgeMaterial = new THREE.MeshPhysicalMaterial({
       color: "#f8f6ef", roughness: .27, metalness: .04,
-      transparent: true, opacity: .58, depthWrite: false,
+      transparent: true, opacity: .4, depthWrite: false,
       clearcoat: .35, clearcoatRoughness: .22,
     });
     const artGeometry = new THREE.PlaneGeometry(3.18, 3.18);
     const markGeometry = new THREE.PlaneGeometry(3.18, .035);
-    for (let index = 0; index < DJ_COVER_RADIUS * 2 + 1; index++) {
+    for (let index = 0; index < DJ_COVER_RADIUS * 2 + 2; index++) {
       const card = new THREE.Group();
       const shell = new THREE.Mesh(shellGeometry, glassMaterial);
       const edges = new THREE.Mesh(edgeGeometry, edgeMaterial);
       const artMaterial = new THREE.MeshBasicMaterial({
         map: this.coverFallbackTexture(), side: THREE.DoubleSide,
-        transparent: true, opacity: .90, depthWrite: true, color: "#f4f2ed",
+        // The cover ink stays fully opaque; translucency belongs to the glass
+        // shell so neighboring archive layers cannot wash out the artwork.
+        transparent: false, opacity: 1, depthWrite: true, color: "#ffffff",
       });
-      // A light diffusion layer keeps album art legible through frosted glass.
-      artMaterial.onBeforeCompile = shader => {
-        shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `
-          #ifdef USE_MAP
-            vec2 radius = vec2(.0018);
-            vec4 ink = texture2D(map, vMapUv) * .64
-              + texture2D(map, vMapUv + vec2(radius.x, 0.0)) * .09
-              + texture2D(map, vMapUv - vec2(radius.x, 0.0)) * .09
-              + texture2D(map, vMapUv + vec2(0.0, radius.y)) * .09
-              + texture2D(map, vMapUv - vec2(0.0, radius.y)) * .09;
-            diffuseColor *= ink;
-            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.94, .93, .90), .06);
-          #endif
-        `);
-      };
-      artMaterial.customProgramCacheKey = () => "dj-sleeve-frosted-ink-v1";
       const art = new THREE.Mesh(artGeometry, artMaterial);
       // Keep the image coplanar with the compressed shell's front face.
       art.position.set(.1, 1.94, .061);
@@ -321,22 +474,73 @@ export class ArchiveScene {
     }
   }
   private updateDjCoverCards(field: (row: number, lane: number) => number, hoverLift: (cell: ArchiveCell) => number,
-    trackX: number, entryZ: number, detail: number, showCovers: boolean) {
-    const view = this.djQueueView;
-    const enabled = showCovers && this.looping && this.presence > .05 && view && view.index >= 0;
+    trackX: number, entryZ: number, detail: number, showCovers: boolean, showTrackDetailCover = false) {
+    let view = this.djQueueView;
+    if (showTrackDetailCover && view?.queue[view.index]) {
+      this.model.visible = false;
+      if (this.djCoverTransition) {
+        view = this.djCoverTransition.targetView;
+        this.djQueueView = view;
+        this.djCoverTransition = null;
+        this.syncDjCoverSlots();
+      }
+      const track = view?.queue[view.index];
+      if (track) {
+        const card = this.djCoverCards[DJ_COVER_RADIUS];
+        for (const candidate of this.djCoverCards) candidate.visible = candidate === card;
+        card.position.copy(this.model.position);
+        card.rotation.copy(this.model.rotation);
+        card.scale.setScalar(1);
+        card.userData.archiveCell = { ...this.selectedCell };
+        card.userData.coverSlot = { lane: this.selectedCell.lane, row: this.selectedCell.row, trackIndex: view!.index, active: true } satisfies DjCoverSlot;
+        card.userData.coverMotionOffsetY = 0;
+        (card.userData.mark as THREE.Mesh).visible = false;
+        const art = card.userData.art as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+        art.visible = true;
+        const texture = this.coverTexture(track.coverUrl);
+        if (art.material.map !== texture) { art.material.map = texture; art.material.needsUpdate = true; }
+        this.djCoverSlots = [card.userData.coverSlot as DjCoverSlot];
+        return;
+      }
+    }
+    const enabled = showCovers && this.looping && this.presence > .05 && view && Boolean(view.queue[view.index]);
     this.model.visible = true;
-    if (!enabled || !view) { for (const card of this.djCoverCards) card.visible = false; return; }
+    if (!enabled || !view) {
+      if (this.djCoverTransition) {
+        this.djQueueView = this.djCoverTransition.targetView;
+        this.djCoverTransition = null;
+        this.syncDjCoverSlots();
+      }
+      for (const card of this.djCoverCards) card.visible = false;
+      return;
+    }
+    this.advanceDjCoverTransition(performance.now() / 1000);
+    view = this.djQueueView;
+    if (!view) { for (const card of this.djCoverCards) card.visible = false; return; }
+    if (this.djCoverTransition?.phase === "slide") {
+      this.updateDjCoverSlideCards(field, hoverLift, trackX, entryZ, detail, this.djCoverTransition);
+      return;
+    }
     const anchorLane = this.selectedCell.lane;
     const anchorRow = this.selectedCell.row;
+    const now = performance.now() / 1000;
     this.djCoverSlots = djCoverSlots(view.queue.length, view.index, anchorLane, anchorRow);
+    const tracksByRow = new Map(this.djCoverSlots.map(slot => [slot.row, view.queue[slot.trackIndex]]));
     const visibleRows = new Set(this.drawnCells.filter(cell => cell.lane === anchorLane).map(cell => cell.row));
     visibleRows.add(anchorRow);
-    for (let index = 0; index < this.djCoverCards.length; index++) {
-      const card = this.djCoverCards[index], slot = this.djCoverSlots[index];
-      if (!slot || !visibleRows.has(slot.row)) { card.visible = false; continue; }
-      const track = view.queue[slot.trackIndex];
-      const cell = { lane: slot.lane, row: slot.row };
+    const visibleSlots = djVisibleCoverSlots(view.queue.length, view.index, anchorLane, anchorRow, [...visibleRows]);
+    const visiblePosition = new Map(visibleSlots.map(({ slot }, index) => [slot.row, visibleSlots.length > 1 ? index / (visibleSlots.length - 1) : .5]));
+    for (const card of this.djCoverCards) card.visible = false;
+    // The active cover is guaranteed to occupy the selected archive's row.
+    // Keep the original selected model hidden for the whole rendered frame so
+    // a clipped/cull edge can never reveal it during the detail-to-workbench handoff.
+    this.model.visible = false;
+    for (const { slot, cardIndex } of visibleSlots) {
+      const card = this.djCoverCards[cardIndex], row = slot.row;
+      const track = tracksByRow.get(row);
+      const cell = { lane: anchorLane, row };
       card.userData.archiveCell = cell;
+      card.userData.coverSlot = slot ?? null;
       const position = this.cellPosition(cell);
       if (sameCell(cell, this.selectedCell)) {
         card.position.copy(this.model.position);
@@ -347,14 +551,104 @@ export class ArchiveScene {
           position.z + entryZ + this.rail.value);
         card.rotation.set((field(cell.row + .5, cell.lane) - field(cell.row - .5, cell.lane)) * .024 * (1 - detail), 0, 0);
       }
+      const motionOffset = this.djCoverMotionOffset(row, visiblePosition.get(row) ?? .5, now);
+      card.position.y += motionOffset;
+      card.userData.coverMotionOffsetY = motionOffset;
       card.scale.setScalar(1);
-      (card.userData.mark as THREE.Mesh).visible = slot.active;
+      (card.userData.mark as THREE.Mesh).visible = Boolean(slot?.active);
       const art = card.userData.art as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-      const texture = this.coverTexture(track.coverUrl);
-      if (art.material.map !== texture) { art.material.map = texture; art.material.needsUpdate = true; }
+      art.visible = Boolean(track);
+      if (track) {
+        const texture = this.coverTexture(track.coverUrl);
+        if (art.material.map !== texture) { art.material.map = texture; art.material.needsUpdate = true; }
+      }
+      card.visible = true;
+    }
+  }
+  private updateDjCoverSlideCards(field: (row: number, lane: number) => number, hoverLift: (cell: ArchiveCell) => number,
+    trackX: number, entryZ: number, detail: number, transition: DjCoverTransition) {
+    const sourceView = transition.sourceView;
+    const targetView = transition.targetView;
+    const direction = transition.direction;
+    if (!sourceView || !direction) return;
+    const lane = this.selectedCell.lane;
+    const anchorRow = this.selectedCell.row;
+    const sourceSlots = djCoverSlots(sourceView.queue.length, sourceView.index, lane, anchorRow);
+    const targetSlots = djCoverSlots(targetView.queue.length, targetView.index, lane, anchorRow);
+    this.djCoverSlots = sourceSlots;
+    const visibleRows = new Set(this.drawnCells.filter(cell => cell.lane === lane).map(cell => cell.row));
+    visibleRows.add(anchorRow);
+    const visibleSlots = djVisibleCoverSlots(sourceView.queue.length, sourceView.index, lane, anchorRow, [...visibleRows]);
+    const coverRows = visibleSlots.map(({ slot }) => slot.row);
+    const progress = ease((performance.now() / 1000 - transition.startedAt) / DJ_COVER_SLIDE_DURATION);
+    const rowShift = direction > 0 ? -1 : 1;
+    const positionAt = (row: number) => {
+      const cell = { lane, row };
+      const base = this.cellPosition(cell);
+      const position = new THREE.Vector3(base.x - trackX,
+        base.y + field(row, lane) + hoverLift(cell) - this.presentationDrop(cell),
+        base.z + entryZ + this.rail.value);
+      const rotation = new THREE.Euler((field(row + .5, lane) - field(row - .5, lane)) * .024 * (1 - detail), 0, 0);
+      if (sameCell(cell, this.selectedCell)) {
+        position.copy(this.model.position);
+        rotation.copy(this.model.rotation);
+      }
+      return { position, rotation };
+    };
+    const setTrack = (card: THREE.Group, track: NeteaseTrack | undefined) => {
+      const art = card.userData.art as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+      art.visible = Boolean(track);
+      if (track) {
+        const texture = this.coverTexture(track.coverUrl);
+        if (art.material.map !== texture) { art.material.map = texture; art.material.needsUpdate = true; }
+      }
+    };
+    for (const card of this.djCoverCards) card.visible = false;
+    this.model.visible = false;
+    for (const { slot, cardIndex } of visibleSlots) {
+      const card = this.djCoverCards[cardIndex];
+      const row = slot.row;
+      const track = sourceView.queue[slot.trackIndex];
+      if (!track) { card.visible = false; continue; }
+      const from = positionAt(row);
+      const to = positionAt(row + rowShift);
+      card.position.copy(from.position).lerp(to.position, progress);
+      card.position.y += Math.sin(progress * Math.PI) * .12;
+      card.rotation.x = THREE.MathUtils.lerp(from.rotation.x, to.rotation.x, progress);
+      card.rotation.y = THREE.MathUtils.lerp(from.rotation.y, to.rotation.y, progress);
+      card.rotation.z = THREE.MathUtils.lerp(from.rotation.z, to.rotation.z, progress);
+      card.scale.setScalar(1);
+      card.userData.archiveCell = { lane, row: row + rowShift };
+      card.userData.coverSlot = slot;
+      card.userData.coverMotionOffsetY = 0;
+      (card.userData.mark as THREE.Mesh).visible = Boolean(slot.active);
+      setTrack(card, track);
       card.visible = true;
       if (slot.active) this.model.visible = false;
     }
+    const incomingCard = this.djCoverCards[DJ_COVER_RADIUS * 2 + 1];
+    // The rendered slice can be narrower than the logical ±24 slot range at
+    // some camera/viewport sizes. Bring the next/previous cover in at the
+    // actual visible edge so it occupies the same lane as its neighbors.
+    const incomingRow = direction > 0 ? coverRows[coverRows.length - 1] : coverRows[0];
+    const incomingSlot = incomingRow === undefined ? undefined : targetSlots.find(slot => slot.row === incomingRow);
+    const incomingTrack = incomingSlot ? targetView.queue[incomingSlot.trackIndex] : undefined;
+    if (incomingSlot && incomingTrack) {
+      const from = positionAt(incomingRow - rowShift);
+      const to = positionAt(incomingRow);
+      incomingCard.position.copy(from.position).lerp(to.position, progress);
+      incomingCard.position.y += Math.sin(progress * Math.PI) * .12;
+      incomingCard.rotation.x = THREE.MathUtils.lerp(from.rotation.x, to.rotation.x, progress);
+      incomingCard.rotation.y = THREE.MathUtils.lerp(from.rotation.y, to.rotation.y, progress);
+      incomingCard.rotation.z = THREE.MathUtils.lerp(from.rotation.z, to.rotation.z, progress);
+      incomingCard.scale.setScalar(.98 + .02 * progress);
+      incomingCard.userData.archiveCell = { lane, row: incomingRow };
+      incomingCard.userData.coverSlot = incomingSlot;
+      incomingCard.userData.coverMotionOffsetY = 0;
+      (incomingCard.userData.mark as THREE.Mesh).visible = false;
+      setTrack(incomingCard, incomingTrack);
+      incomingCard.visible = true;
+    } else incomingCard.visible = false;
   }
   setRelayActive(active: boolean) {
     if (active === this.relayActive) return;
@@ -1791,8 +2085,26 @@ export class ArchiveScene {
       .filter(x => x >= 0 && x <= 1);
     const spectrumLeft = spectrumXs.length ? Math.min(...spectrumXs) : 0;
     const spectrumRight = spectrumXs.length ? Math.max(...spectrumXs) : 1;
-    const showDjCovers = isDjPrototype && !cinematic && !targetDetail && this.detail < .1 && Boolean(this.djQueueView?.queue.length) &&
-      this.container.closest<HTMLElement>("#stage")?.dataset.workbench === "true" && !exportFocusActive;
+    const coverLane = djCoverLaneState({
+      prototype: isDjPrototype,
+      cinematic: Boolean(cinematic),
+      looping: this.looping,
+      presence: this.presence,
+      hasCurrentTrack: Boolean(this.djQueueView?.queue[this.djQueueView.index]),
+      exportFocus: exportFocusActive,
+      targetDetail: Boolean(targetDetail),
+      detail: this.detail,
+      workbench: this.container.closest<HTMLElement>("#stage")?.dataset.workbench === "true",
+      archivePinned: this.djArchiveCoverLanePinned,
+      archiveReturning: this.djArchiveCoverLaneReturning,
+    });
+    const showDjCovers = coverLane.visible;
+    if (coverLane.workbenchReady && this.djArchiveCoverLaneReturning) {
+      this.djArchiveCoverLanePinned = false;
+      this.djArchiveCoverLaneReturning = false;
+    }
+    const showDjTrackDetailCover = Boolean(isDjPrototype && this.djArchiveCoverLanePinned && !cinematic && !exportFocusActive &&
+      !showDjCovers && this.djQueueView?.queue[this.djQueueView.index]);
     const field = (row: number, lane: number) => {
       if (cinematic)
         return cinematicField(
@@ -2149,7 +2461,7 @@ export class ArchiveScene {
     const hidden = new Set(this.outgoing.map(o => cellKey(o.cell)));
     hidden.add(cellKey(this.selectedCell));
     const coverCells = new Set(showDjCovers && this.looping && this.presence > .05 && this.djQueueView
-      ? djCoverSlots(this.djQueueView.queue.length, this.djQueueView.index, selectedLane, selectedRow).map(cellKey)
+      ? this.cells.filter(cell => cell.lane === selectedLane).map(cellKey)
       : []);
     this.drawnCells = [];
     this.relayPoints.clear();
@@ -2176,7 +2488,7 @@ export class ArchiveScene {
       if (play.enabled) this.relayPoints.set(cellKey(cell), { cell: { ...cell }, point: new THREE.Vector3(0, 3.5, 0).applyMatrix4(this.dummy.matrix) });
       this.matrixUpdates!.set(i * 16, this.dummy.matrix.elements);
     }
-    this.updateDjCoverCards(field, hoverLift, trackX, entryZ, detail, showDjCovers);
+    this.updateDjCoverCards(field, hoverLift, trackX, entryZ, detail, showDjCovers, showDjTrackDetailCover);
     const countChanged = this.instances[0].count !== this.drawnCells.length;
     const matricesChanged = this.matrixUpdates!.commit();
     for (const inst of this.instances) {
@@ -2368,10 +2680,13 @@ export class ArchiveScene {
       },
       djCovers: (() => {
         const activeIndex = this.djCoverSlots.findIndex(slot => slot.active);
-        const active = this.djCoverCards[activeIndex];
+        const active = this.djCoverCards.find(card => card.userData.coverSlot?.active);
         const visibleCards = this.djCoverCards.filter(card => card.visible);
         return {
           visible: visibleCards.length,
+          trackDetailCover: this.djArchiveCoverLanePinned && visibleCards.length === 1,
+          trackDetailReturning: this.djArchiveCoverLaneReturning,
+          playlistTransition: this.djCoverTransition?.phase ?? "idle",
           glassDepthScale: visibleCards.length ? .22 : null,
           selectedIvoryVisible: this.model.visible,
           activeTrackIndex: activeIndex < 0 ? -1 : this.djCoverSlots[activeIndex].trackIndex,

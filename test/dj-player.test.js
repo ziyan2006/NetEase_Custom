@@ -33,13 +33,16 @@ test("player uses one media element and previous/next replace the queue track", 
   const player = new DjPlayer({ audio, resolveAudioUrl: async id => { requested.push(id); return `https://audio/${id}.mp3`; } });
   await player.setQueue(tracks, 1);
   assert.equal(player.getState().track.id, "track-2");
+  assert.equal(player.getState().stepDirection, 0);
   assert.equal(audio.src, "https://audio/track-2.mp3");
   await player.next();
   assert.equal(player.getState().track.id, "track-3");
+  assert.equal(player.getState().stepDirection, 1);
   await player.next();
   assert.equal(player.getState().track.id, "track-1");
   await player.previous();
   assert.equal(player.getState().track.id, "track-3");
+  assert.equal(player.getState().stepDirection, -1);
   assert.deepEqual(requested, ["track-2", "track-3", "track-1", "track-3"]);
 });
 

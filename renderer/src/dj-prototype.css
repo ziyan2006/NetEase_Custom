@@ -210,6 +210,9 @@ html[data-dj-prototype="true"] .wb-dj-player-foot { display: flex; align-items: 
 html[data-dj-prototype="true"] .wb-dj-transport { display: flex; align-items: center; gap: 12px; }
 html[data-dj-prototype="true"] .wb-dj-transport button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; color: #080a08; font-size: 15px; }
 html[data-dj-prototype="true"] .wb-dj-transport .wb-dj-play-toggle { width: 40px; height: 40px; background: #080a08; color: #fff; font-size: 16px; }
+html[data-dj-prototype="true"] .wb-dj-transport .wb-dj-mode-toggle { width: 34px; height: 34px; margin-left: 4px; color: #77756d; }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle svg { display: block; width: 19px; height: 19px; overflow: visible; }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle[data-mode="shuffle"] { color: #a27849; background: rgba(162, 120, 73, .08); }
 html[data-dj-prototype="true"] .wb-dj-transport button:disabled { opacity: .35; cursor: not-allowed; }
 html[data-dj-prototype="true"] .wb-dj-player-open { display: block; width: 100%; padding: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 html[data-dj-prototype="true"] .wb-dj-player-open:hover .wb-dj-open-hint { color: #a27849; }

@@ -8,6 +8,36 @@
   color: #080a08;
   background: #e8e5e1;
   font-synthesis: none;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--theme-muted, #77756d) 72%, var(--theme-accent, #9b7247)) transparent;
+}
+/* Quiet, architectural scroll rails: a hairline track and a narrow brass/graphite thumb. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track:vertical {
+  background: linear-gradient(90deg, transparent calc(50% - .5px), rgba(var(--theme-line-rgb, 170, 165, 154), .42) calc(50% - .5px), rgba(var(--theme-line-rgb, 170, 165, 154), .42) calc(50% + .5px), transparent calc(50% + .5px));
+}
+*::-webkit-scrollbar-track:horizontal {
+  background: linear-gradient(180deg, transparent calc(50% - .5px), rgba(var(--theme-line-rgb, 170, 165, 154), .42) calc(50% - .5px), rgba(var(--theme-line-rgb, 170, 165, 154), .42) calc(50% + .5px), transparent calc(50% + .5px));
+}
+*::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  border: 3px solid transparent;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--theme-muted, #77756d) 72%, var(--theme-accent, #9b7247));
+  background-clip: content-box;
+  transition: background-color 160ms ease;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--theme-accent, #9b7247);
+}
+*::-webkit-scrollbar-thumb:active {
+  background-color: var(--theme-ink, #080a08);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
 }
 body {
   margin: 0;
@@ -834,7 +864,6 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: thin;
-  scrollbar-color: #bbb4a6 transparent;
 }
 .panel-label {
   font-size: 9px;
@@ -1128,7 +1157,6 @@ button {
   overflow-x: hidden;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  scrollbar-color: #bbb4a6 transparent;
 }
 .result-row {
   width: 100%;

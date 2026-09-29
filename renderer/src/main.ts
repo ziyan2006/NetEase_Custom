@@ -469,9 +469,10 @@ function setMode(next: Mode) {
     pendingDetailFocus = false;
     tabTransition.cancel();
     detailTransition.hide(prefs.reduced || next === "boot");
-    if (!modal && next === "archive") $(".read-file").focus({ preventScroll: true });
+    if (!modal && next === "archive" && !workbench?.enabled) $(".read-file").focus({ preventScroll: true });
   }
   $("#detail-ui").inert = next !== "detail" || Boolean(modal);
+  scene?.setDjArchiveCoverLanePinned(isDjPrototype && next === "detail");
   scene?.setMode(next === "boot" ? "hidden" : next);
   if (next !== "boot") {
     bootSequence.reset();
@@ -581,6 +582,17 @@ function openFile() {
     audio.play("open");
   });
 }
+function returnFromDetail() {
+  const returnToDjWorkspace = isDjPrototype && records[selected]?.en === "TRACK PREVIEW";
+  if (returnToDjWorkspace && workbench) {
+    workbench.setEnabled(true);
+    // setEnabled normally switches the app back to archive mode through its
+    // onMode callback. Keep this explicit for early startup / host edge cases.
+    if (mode === "detail") setMode("archive");
+    return;
+  }
+  setMode("archive");
+}
 function toggleSaved() {
   const id = records[selected].id;
   if (saved.has(id)) saved.delete(id);
@@ -622,6 +634,7 @@ function renderDetail(preserveReveal = false) {
   <div id="tab-panel" class="tab-panel" role="tabpanel">${overview()}</div>
   <div class="detail-actions"><button class="solid-button" data-action="bookmark">${saved.has(r.id) ? "− REMOVE FROM SAVED" : "＋ SAVE ARCHIVE"}<span>${saved.has(r.id) ? tr("已收藏") : tr("收藏档案")}</span></button>${isDjPrototype ? "" : `<a class="export-button" href="${exportHref}" download="${exportName}" aria-label="导出 ${r.id} 档案">EXPORT <span>↓</span></a>`}</div>
   <div class="detail-footnote"><a href="${escapeHtml(r.source)}" target="_blank" rel="noopener">${isDjPrototype ? "原型素材来源" : "设定参考"} ↗</a><span>${String(selected + 1).padStart(3, "0")} / ${String(records.length).padStart(3, "0")}</span></div>`;
+  $("#detail-ui .back-button span").textContent = isDjPrototype && r.en === "TRACK PREVIEW" ? "DJ WORKSPACE" : "ARCHIVE OVERVIEW";
   $("#detail-content").setAttribute("tabindex", "-1");
   $('[data-action="bookmark"]').setAttribute("aria-pressed", String(saved.has(r.id)));
   if (preserveReveal) documentDecryption.refresh();
@@ -1048,7 +1061,7 @@ document.addEventListener("click", (e) => {
     audio.play("page-open");
   }
   if (action === "back") {
-    setMode("archive");
+    returnFromDetail();
     audio.play("back");
   }
   if (action === "dj-home" && isDjPrototype) workbench?.setEnabled(true);
@@ -1105,7 +1118,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     if (modal) closeModal();
-    else if (mode === "detail" || (mode === "boot" && ready)) { const sound = mode === "detail" ? "back" : "ui-tick"; setMode("archive"); audio.play(sound); }
+    else if (mode === "detail" || (mode === "boot" && ready)) { const sound = mode === "detail" ? "back" : "ui-tick"; if (mode === "detail") returnFromDetail(); else setMode("archive"); audio.play(sound); }
     return;
   }
   if (modal && e.key === "Tab") {
@@ -1369,6 +1382,7 @@ async function toggleThree() {
       notify(tr("模型精度载入失败，暂时使用高精度，请重新选择档位重试。"));
     });
     next.setMode(mode === "detail" ? "detail" : "archive");
+    next.setDjArchiveCoverLanePinned(isDjPrototype && mode === "detail");
     bindScene(next, resumeSelection === selected ? resumeCell : undefined);
     next.revealImmediately();
     scene = next;

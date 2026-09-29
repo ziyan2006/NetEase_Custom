@@ -13,7 +13,7 @@ import "./workbench.css";
 import { defaultWorkbenchVisibility, applyVisibilityProperties, type WorkbenchVisibility, type WorkbenchElement } from "./workbench-visibility";
 
 type Media = { status?: { enabled?: boolean }; properties?: { title?: string; artist?: string; albumTitle?: string }; thumbnail?: { thumbnail?: string }; timeline?: { position?: number; duration?: number }; playing?: boolean };
-type DjPlayerState = { queue: NeteaseTrack[]; index: number; status: "idle" | "loading" | "playing" | "paused" | "error"; currentTime: number; duration: number; error: string; track: NeteaseTrack | null };
+type DjPlayerState = { queue: NeteaseTrack[]; index: number; playbackMode: "loop" | "shuffle"; playbackQueue: NeteaseTrack[]; playbackIndex: number; stepDirection: -1 | 0 | 1; status: "idle" | "loading" | "playing" | "paused" | "error"; currentTime: number; duration: number; error: string; track: NeteaseTrack | null };
 type DrawerMode = "agent" | "playlist" | "search";
 const drawerLanes: Record<DrawerMode, number> = { agent: 0, playlist: 1, search: 2 };
 declare global { interface Window { rhineWallpaperMedia?: Media; } }
@@ -54,11 +54,14 @@ export class Workbench {
   private detailRequestId = 0;
   private player: DjPlayer;
   private djSpectrum?: DjSpectrumAnalyzer;
-  private playerState: DjPlayerState = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
-  private djQueueView: { queue: NeteaseTrack[]; index: number } = { queue: [], index: -1 };
+  private playerState: DjPlayerState = { queue: [], index: -1, playbackMode: "loop", playbackQueue: [], playbackIndex: -1, stepDirection: 0, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
+  private djQueueView: { queue: NeteaseTrack[]; index: number; playlistRevision: number; direction: -1 | 0 | 1 } = { queue: [], index: -1, playlistRevision: 0, direction: 0 };
+  private playerQueueSignature = "";
+  private djQueueRevision = 0;
   private renderedPlayerKey = "";
   private playerTrackId = "";
   private playerSnapshotWriteAt = 0;
+  private playerSnapshotPlaybackMode: "loop" | "shuffle" = "loop";
   private playerSnapshotRestored = false;
   private playerPickerOpen = false;
   private seekingPlayer = false;
@@ -769,13 +772,24 @@ export class Workbench {
   private onPlayerState(state: DjPlayerState) {
     const previousTrackId = this.playerTrackId;
     const previousStatus = this.playerState.status;
-    const queueChanged = state.index !== this.djQueueView.index || state.queue.length !== this.djQueueView.queue.length ||
-      state.queue.some((track, index) => track.id !== this.djQueueView.queue[index]?.id || track.coverUrl !== this.djQueueView.queue[index]?.coverUrl);
-    this.playerState = state;
-    if (queueChanged) this.djQueueView = { queue: state.queue, index: state.index };
-    this.persistPlayerSnapshot(state);
+    const queueSignature = state.queue.length ? JSON.stringify(state.queue.map(track => [track.id, track.coverUrl])) : "";
+    const playlistChanged = Boolean(queueSignature && this.playerQueueSignature && queueSignature !== this.playerQueueSignature);
+    if (queueSignature !== this.playerQueueSignature) {
+      if (playlistChanged) this.djQueueRevision++;
+      this.playerQueueSignature = queueSignature;
+    }
+    const queueChanged = state.playbackIndex !== this.djQueueView.index || state.playbackQueue.length !== this.djQueueView.queue.length ||
+      state.playbackQueue.some((track, index) => track.id !== this.djQueueView.queue[index]?.id || track.coverUrl !== this.djQueueView.queue[index]?.coverUrl);
     const trackId = state.track?.id ?? "";
-    if (trackId !== previousTrackId) {
+    const trackChanged = trackId !== previousTrackId;
+    const playbackStepped = state.playbackIndex !== this.djQueueView.index && state.stepDirection !== 0;
+    this.playerState = state;
+    if (queueChanged || playlistChanged) this.djQueueView = {
+      queue: state.playbackQueue, index: state.playbackIndex,
+      playlistRevision: this.djQueueRevision, direction: playbackStepped ? state.stepDirection : 0,
+    };
+    this.persistPlayerSnapshot(state);
+    if (trackChanged) {
       this.playerTrackId = trackId;
       this.playerActionNotice = "";
       this.onTrackStep(state.track);
@@ -804,17 +818,21 @@ export class Workbench {
           durationMs: Number.isFinite(Number(track.durationMs)) ? Math.max(0, Number(track.durationMs)) : null,
         } satisfies NeteaseTrack;
       }).filter((track: NeteaseTrack | null): track is NeteaseTrack => Boolean(track));
+      const playbackMode = saved.playbackMode === "shuffle" ? "shuffle" : "loop";
+      this.player.setPlaybackMode(playbackMode);
+      this.playerSnapshotPlaybackMode = playbackMode;
       if (queue.length) this.player.restoreQueue(queue, Number(saved.index) || 0, Number(saved.currentTime) || 0, Number(saved.duration) || 0);
     } catch { /* A damaged local snapshot must not prevent the DJ workspace from loading. */ }
   }
   private persistPlayerSnapshot(state: DjPlayerState) {
     if (!isDjPrototype || !this.playerSnapshotRestored) return;
     const now = Date.now();
-    if (state.status === "playing" && now - this.playerSnapshotWriteAt < 1000 && state.track?.id === this.playerTrackId) return;
+    if (state.status === "playing" && now - this.playerSnapshotWriteAt < 1000 && state.track?.id === this.playerTrackId && state.playbackMode === this.playerSnapshotPlaybackMode) return;
     this.playerSnapshotWriteAt = now;
     try {
       if (!state.queue.length || state.index < 0) {
         localStorage.removeItem(playerStorageKey);
+        this.playerSnapshotPlaybackMode = state.playbackMode;
         return;
       }
       const queue = state.queue.slice(0, 1000);
@@ -822,10 +840,12 @@ export class Workbench {
         version: 1,
         queue,
         index: Math.max(0, Math.min(queue.length - 1, state.index)),
+        playbackMode: state.playbackMode,
         currentTime: Math.max(0, Number(state.currentTime) || 0),
         duration: Math.max(0, Number(state.duration) || 0),
         savedAt: now,
       }));
+      this.playerSnapshotPlaybackMode = state.playbackMode;
     } catch { /* Queue persistence is best effort; playback remains available. */ }
   }
   private settle(now: number) {
@@ -1108,6 +1128,7 @@ export class Workbench {
     if (action === "player-toggle") { await this.player.toggle(); return; }
     if (action === "player-next") { await this.player.next(); return; }
     if (action === "player-previous") { await this.player.previous(); return; }
+    if (action === "player-mode-toggle") { this.player.setPlaybackMode(this.playerState.playbackMode === "loop" ? "shuffle" : "loop"); return; }
     if (action === "player-add") {
       if (this.playerState.track) await this.prepareTrackAdd(this.playerState.track, true);
       return;
@@ -1324,7 +1345,7 @@ export class Workbench {
         <div class="wb-kicker">NOW PLAYING / PLAYER <span id="dj-player-status" role="status" aria-live="polite"></span></div>
         ${track ? `<button class="wb-dj-player-open" data-dj-action="track-detail" aria-label="打开 ${escapeHtml(track.title)} 的 3D 歌曲档案"><span class="wb-dj-player-cover">${track.coverUrl ? `<img src="${escapeHtml(track.coverUrl)}" alt="${escapeHtml(track.title)} 封面"/>` : `<i aria-hidden="true">♫</i>`}</span><span class="wb-dj-player-info"><small>NETEASE MUSIC / NOW PLAYING</small><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artists.join(" / ") || "未知艺人")} · ${escapeHtml(track.album)}</span><i class="wb-dj-open-hint">打开歌曲 3D 档案 ↗</i></span></button>` : `<div class="wb-playlist-empty wb-player-empty"><strong>尚未选择曲目</strong><small>从云端歌单或在线搜索中选择歌曲后，播放器会显示真实封面与播放进度。</small></div>`}
         <div class="wb-dj-progress"><input id="dj-player-seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="歌曲播放进度" disabled/><div><span id="dj-player-current">00:00</span><span id="dj-player-duration">00:00</span></div></div>
-        <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport"><button data-dj-action="player-previous" ${track ? "" : "disabled"} aria-label="上一首">⏮</button><button class="wb-dj-play-toggle" data-dj-action="player-toggle" ${track ? "" : "disabled"} aria-label="播放">▶</button><button data-dj-action="player-next" ${track ? "" : "disabled"} aria-label="下一首">⏭</button></div></div>
+        <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport"><button data-dj-action="player-previous" ${track ? "" : "disabled"} aria-label="上一首">⏮</button><button class="wb-dj-play-toggle" data-dj-action="player-toggle" ${track ? "" : "disabled"} aria-label="播放">▶</button><button data-dj-action="player-next" ${track ? "" : "disabled"} aria-label="下一首">⏭</button><button class="wb-dj-mode-toggle" data-dj-action="player-mode-toggle" data-mode="loop" ${track ? "" : "disabled"} aria-label="顺序循环播放，点击切换随机播放" title="顺序循环播放 · 点击切换随机播放" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="wb-dj-icon-loop" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h10a3 3 0 0 1 3 3v1"/><path d="m18 3 3 3-3 3"/><path d="M16 19H6a3 3 0 0 1-3-3v-1"/><path d="m6 21-3-3 3-3"/></g><g class="wb-dj-icon-shuffle" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 2-2a3 3 0 0 1 4.2 0l7.6 7.6a3 3 0 0 0 4.2 0l1-1"/><path d="M18 4h3v3"/><path d="m4 17 2 2a3 3 0 0 0 4.2 0l1.2-1.2"/><path d="M18 20h3v-3"/><path d="m4 7 16 12"/></g></svg></button></div></div>
         <div class="wb-dj-player-actions">${actions}</div>
         ${this.playerPickerOpen && this.pendingTrack ? this.renderTrackAddConfirmation(true) : ""}
         <p id="dj-player-error" class="wb-muted wb-dj-player-notice" role="status" hidden></p>`;
@@ -1341,6 +1362,14 @@ export class Workbench {
     if (status) status.textContent = labels[state.status] ?? "";
     const toggle = this.root.querySelector<HTMLButtonElement>('[data-dj-action="player-toggle"]');
     if (toggle) { toggle.textContent = state.status === "playing" ? "Ⅱ" : "▶"; toggle.setAttribute("aria-label", state.status === "playing" ? "暂停" : "播放"); }
+    const modeToggle = this.root.querySelector<HTMLButtonElement>('[data-dj-action="player-mode-toggle"]');
+    if (modeToggle) {
+      const shuffle = state.playbackMode === "shuffle";
+      modeToggle.dataset.mode = shuffle ? "shuffle" : "loop";
+      modeToggle.setAttribute("aria-pressed", String(shuffle));
+      modeToggle.setAttribute("aria-label", shuffle ? "随机播放，点击切换顺序循环" : "顺序循环播放，点击切换随机播放");
+      modeToggle.title = shuffle ? "随机播放 · 点击切换顺序循环" : "顺序循环播放 · 点击切换随机播放";
+    }
     const seek = this.root.querySelector<HTMLInputElement>("#dj-player-seek");
     if (seek) {
       const duration = Math.max(0, state.duration);

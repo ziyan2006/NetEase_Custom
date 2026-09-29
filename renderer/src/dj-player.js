@@ -4,6 +4,8 @@ function messageForPlaybackError(error) {
   return "音频无法播放，请检查曲目权限或网络后重试。";
 }
 
+const DJ_PLAYBACK_HISTORY_LIMIT = 49;
+
 /** One HTMLAudioElement and one queue shared by all DJ playback entry points. */
 export class DjPlayer {
   constructor({ resolveAudioUrl, onChange = () => {}, onPlayRequested = () => {}, audio = new Audio() }) {
@@ -13,6 +15,11 @@ export class DjPlayer {
     this.onPlayRequested = onPlayRequested;
     this.requestId = 0;
     this.restorePosition = 0;
+    this.playbackMode = "loop";
+    this.shuffleHistory = [];
+    this.shufflePosition = -1;
+    this.shuffleBag = [];
+    this.stepDirection = 0;
     this.state = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "" };
     this.audio.preload = "metadata";
     this.audio.addEventListener("loadedmetadata", () => this.syncTime());
@@ -31,7 +38,48 @@ export class DjPlayer {
   }
 
   getState() {
-    return { ...this.state, queue: [...this.state.queue], track: this.state.queue[this.state.index] ?? null };
+    const playbackIndices = this.playbackMode === "shuffle"
+      ? [...this.shuffleHistory, ...this.shuffleBag]
+      : this.state.queue.map((_, index) => index);
+    const playbackQueue = playbackIndices.map(index => this.state.queue[index]).filter(Boolean);
+    return {
+      ...this.state,
+      queue: [...this.state.queue],
+      playbackMode: this.playbackMode,
+      playbackQueue,
+      playbackIndex: this.playbackMode === "shuffle" ? this.shufflePosition : this.state.index,
+      stepDirection: this.stepDirection,
+      track: this.state.queue[this.state.index] ?? null,
+    };
+  }
+
+  shuffleIndices(exceptIndex, queue = this.state.queue) {
+    const indices = queue.map((_, index) => index).filter(index => index !== exceptIndex);
+    for (let index = indices.length - 1; index > 0; index--) {
+      const target = Math.floor(Math.random() * (index + 1));
+      [indices[index], indices[target]] = [indices[target], indices[index]];
+    }
+    return indices;
+  }
+
+  startShuffle(index, queue = this.state.queue) {
+    this.shuffleHistory = queue.length ? [index] : [];
+    this.shufflePosition = this.shuffleHistory.length ? 0 : -1;
+    this.shuffleBag = queue.length > 1 ? this.shuffleIndices(index, queue) : [];
+  }
+
+  setPlaybackMode(mode) {
+    const nextMode = mode === "shuffle" ? "shuffle" : "loop";
+    if (nextMode === this.playbackMode) return;
+    this.stepDirection = 0;
+    this.playbackMode = nextMode;
+    if (nextMode === "shuffle") this.startShuffle(this.state.index);
+    else {
+      this.shuffleHistory = [];
+      this.shufflePosition = -1;
+      this.shuffleBag = [];
+    }
+    this.setState({});
   }
 
   setState(patch) {
@@ -49,7 +97,9 @@ export class DjPlayer {
     const valid = Array.isArray(queue) ? queue.filter(track => track && String(track.id)) : [];
     if (!valid.length) return this.clear();
     const selectedIndex = Math.max(0, Math.min(valid.length - 1, Number(index) || 0));
+    this.stepDirection = 0;
     this.restorePosition = 0;
+    if (this.playbackMode === "shuffle") this.startShuffle(selectedIndex, valid);
     this.setState({ queue: valid, index: selectedIndex, status: autoplay ? "loading" : "paused", currentTime: 0, duration: 0, error: "" });
     if (!autoplay) {
       this.requestId++;
@@ -65,6 +115,8 @@ export class DjPlayer {
     const valid = Array.isArray(queue) ? queue.filter(track => track && String(track.id)) : [];
     if (!valid.length) return this.clear();
     const selectedIndex = Math.max(0, Math.min(valid.length - 1, Number(index) || 0));
+    this.stepDirection = 0;
+    if (this.playbackMode === "shuffle") this.startShuffle(selectedIndex, valid);
     const restoredTime = Math.max(0, Number.isFinite(Number(currentTime)) ? Number(currentTime) : 0);
     this.requestId++;
     this.restorePosition = restoredTime;
@@ -155,11 +207,43 @@ export class DjPlayer {
   }
 
   async next() {
-    if (this.state.queue.length) await this.playIndex(this.state.index + 1, true);
+    if (!this.state.queue.length) return;
+    this.stepDirection = 1;
+    if (this.playbackMode !== "shuffle") {
+      await this.playIndex(this.state.index + 1, true);
+      return;
+    }
+    if (this.shufflePosition < this.shuffleHistory.length - 1) {
+      this.shufflePosition++;
+      await this.playIndex(this.shuffleHistory[this.shufflePosition], true);
+      return;
+    }
+    if (!this.shuffleBag.length && this.state.queue.length > 1) this.shuffleBag = this.shuffleIndices(this.state.index);
+    if (!this.shuffleBag.length) {
+      await this.playIndex(this.state.index, true);
+      return;
+    }
+    const nextIndex = this.shuffleBag.shift();
+    this.shuffleHistory.push(nextIndex);
+    this.shufflePosition = this.shuffleHistory.length - 1;
+    if (this.shuffleHistory.length > DJ_PLAYBACK_HISTORY_LIMIT) {
+      const discardCount = this.shuffleHistory.length - DJ_PLAYBACK_HISTORY_LIMIT;
+      this.shuffleHistory.splice(0, discardCount);
+      this.shufflePosition -= discardCount;
+    }
+    await this.playIndex(nextIndex, true);
   }
 
   async previous() {
-    if (this.state.queue.length) await this.playIndex(this.state.index - 1, true);
+    if (!this.state.queue.length) return;
+    if (this.playbackMode === "shuffle" && this.shufflePosition <= 0) return;
+    this.stepDirection = -1;
+    if (this.playbackMode !== "shuffle") {
+      await this.playIndex(this.state.index - 1, true);
+      return;
+    }
+    this.shufflePosition--;
+    await this.playIndex(this.shuffleHistory[this.shufflePosition], true);
   }
 
   seek(value) {
@@ -177,6 +261,10 @@ export class DjPlayer {
   clear() {
     this.requestId++;
     this.restorePosition = 0;
+    this.shuffleHistory = [];
+    this.shufflePosition = -1;
+    this.shuffleBag = [];
+    this.stepDirection = 0;
     this.setState({ queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "" });
     this.audio.pause();
     this.audio.removeAttribute("src");
