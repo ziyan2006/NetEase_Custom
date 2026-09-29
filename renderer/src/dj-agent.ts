@@ -108,6 +108,7 @@ export class DjAgentPanel {
     if (!this.host) return;
     const input = this.host.querySelector<HTMLTextAreaElement>("#dj-agent-input");
     const selection = input && document.activeElement === input ? [input.selectionStart, input.selectionEnd] : null;
+    const closeFocused = document.activeElement === this.host.querySelector("[data-dj-action='drawer-close']");
     const scroll = this.host.querySelector<HTMLElement>(".wb-agent-messages")?.scrollTop ?? 0;
     this.host.innerHTML = `<div class="wb-agent-panel">${this.settingsOpen ? this.settingsView() : this.chatView()}</div>`;
     const panel = this.host.querySelector<HTMLElement>(".wb-agent-panel")!;
@@ -159,6 +160,7 @@ export class DjAgentPanel {
       nextInput?.focus({ preventScroll: true });
       nextInput?.setSelectionRange(selection[0], selection[1]);
     }
+    else if (closeFocused) panel.querySelector<HTMLButtonElement>("[data-dj-action='drawer-close']")?.focus({ preventScroll: true });
   }
   private header(title: string, subtitle: string, settings = false) {
     return `<header class="wb-playlist-heading wb-agent-heading"><div><span>YESMUSIC / AGENT TERMINAL</span><h2 id="dj-playlist-title">${title}</h2><p>${subtitle}</p></div><div class="wb-agent-header-actions">${settings ? '<button class="wb-agent-button" data-agent-action="settings-close">← 返回对话</button>' : `<button class="wb-agent-button" data-agent-action="toggle-sidebar" aria-controls="dj-agent-sessions" aria-expanded="${this.sidebarOpen}" aria-label="展开或收起会话列表">☰</button><button class="wb-agent-button" data-agent-action="settings">模型配置 ↗</button>`}<button class="wb-playlist-close" data-dj-action="drawer-close" aria-label="关闭 Agent 面板">×</button></div></header>`;

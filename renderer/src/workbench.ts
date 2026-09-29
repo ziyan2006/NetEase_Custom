@@ -55,9 +55,11 @@ export class Workbench {
   private player: DjPlayer;
   private djSpectrum?: DjSpectrumAnalyzer;
   private playerState: DjPlayerState = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
+  private djQueueView: { queue: NeteaseTrack[]; index: number } = { queue: [], index: -1 };
   private renderedPlayerKey = "";
   private playerTrackId = "";
   private playerSnapshotWriteAt = 0;
+  private playerSnapshotRestored = false;
   private playerPickerOpen = false;
   private seekingPlayer = false;
   private playerActionNotice = "";
@@ -74,6 +76,8 @@ export class Workbench {
   private activePlaylistPosition = 0;
   private rightDrawerOpen = false;
   private rightDrawerMode: DrawerMode = "playlist";
+  private drawerAnimation?: Animation;
+  private drawerMotionRevision = 0;
   private playlistDetailOpen = false;
   private playlistSearchQuery = "";
   private playlistDrawerNotice = "";
@@ -131,7 +135,10 @@ export class Workbench {
       try { this.djSpectrum = new DjSpectrumAnalyzer(this.player.audio); }
       catch (error) { console.warn("DJ spectrum analyzer unavailable; audio playback remains enabled.", error); }
     }
-    if (isDjPrototype) this.restorePlayerSnapshot();
+    if (isDjPrototype) {
+      this.restorePlayerSnapshot();
+      this.playerSnapshotRestored = true;
+    }
     if (isDjPrototype) this.agentPanel = new DjAgentPanel({
       openSearch: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="2"]')!, "search"),
       openPlaylists: () => this.openRightDrawer(this.root.querySelector<HTMLButtonElement>('[data-wb-lane="1"]')!, "playlist"),
@@ -212,9 +219,10 @@ export class Workbench {
     });
     if (isDjPrototype) window.addEventListener("yesmusic-account-updated", event => {
       const detail = (event as CustomEvent<{ authenticated: boolean; userId?: string }>).detail;
+      const previousAccountUserId = this.accountUserId;
       this.accountUserId = detail?.authenticated ? String(detail.userId ?? "") : "";
       if (this.accountUserId) this.resumePlaylistExportForAccount(this.accountUserId);
-      if (!this.accountUserId) {
+      if (!this.accountUserId && previousAccountUserId) {
         this.playlists = [];
         this.playlistDetail = null;
         this.selectedPlaylistId = "";
@@ -418,6 +426,9 @@ export class Workbench {
     const dismissZone = this.root.querySelector<HTMLButtonElement>(".wb-playlist-dismiss-zone")!;
     const scrim = this.root.querySelector<HTMLElement>(".wb-playlist-scrim")!;
     const drawer = this.root.querySelector<HTMLElement>(".wb-playlist-drawer")!;
+    const wasHidden = drawer.hidden;
+    const startTransform = wasHidden ? "translateX(100%)" : getComputedStyle(drawer).transform;
+    const startOpacity = wasHidden ? "1" : getComputedStyle(drawer).opacity;
     dismissZone.hidden = false;
     scrim.hidden = false;
     drawer.hidden = false;
@@ -427,10 +438,7 @@ export class Workbench {
     this.root.querySelectorAll<HTMLButtonElement>("[data-wb-lane]").forEach(button => button.setAttribute("aria-pressed", String(Number(button.dataset.wbLane) === drawerLanes[mode])));
     this.renderRightDrawer();
     if (mode === "playlist" && this.accountUserId && !this.playlists.length && !this.playlistsLoading) void this.refreshPlaylists();
-    if (!alreadyOpen && !this.stage.classList.contains("reduce-motion")) {
-      drawer.getAnimations().forEach(animation => animation.cancel());
-      drawer.animate([{ opacity: 0, transform: "translateX(100%)" }, { opacity: 1, transform: "translateX(0)" }], { duration: 380, easing: "cubic-bezier(.22,.7,.2,1)" });
-    }
+    if (!alreadyOpen) this.moveRightDrawer(drawer, true, startTransform, startOpacity);
     if (!alreadyOpen || modeChanged) requestAnimationFrame(() => this.root.querySelector<HTMLButtonElement>(".wb-playlist-drawer [data-dj-action='drawer-close']")?.focus({ preventScroll: true }));
   }
   private closeRightDrawer(restoreFocus = true) {
@@ -449,23 +457,35 @@ export class Workbench {
     drawer.inert = true;
     drawer.setAttribute("aria-hidden", "true");
     this.root.querySelectorAll<HTMLButtonElement>('.wb-nav [aria-controls="dj-playlist-drawer"]').forEach(button => button.setAttribute("aria-expanded", "false"));
-    if (this.stage.classList.contains("reduce-motion")) {
-      drawer.hidden = true;
-      dismissZone.hidden = true;
-      scrim.hidden = true;
-    } else {
-      drawer.getAnimations().forEach(animation => animation.cancel());
-      const animation = drawer.animate([{ opacity: 1, transform: "translateX(0)" }, { opacity: 0, transform: "translateX(100%)" }], { duration: 300, easing: "ease-in", fill: "forwards" });
-      animation.onfinish = () => {
-        if (this.rightDrawerOpen) return;
-        drawer.hidden = true;
-        dismissZone.hidden = true;
-        scrim.hidden = true;
-        animation.cancel();
-      };
-    }
+    this.moveRightDrawer(drawer, false, getComputedStyle(drawer).transform, getComputedStyle(drawer).opacity);
     this.renderPanel();
     if (restoreFocus) this.playlistReturnFocus?.focus({ preventScroll: true });
+  }
+  private moveRightDrawer(drawer: HTMLElement, opening: boolean, fromTransform: string, fromOpacity: string) {
+    const revision = ++this.drawerMotionRevision;
+    this.drawerAnimation?.cancel();
+    this.drawerAnimation = undefined;
+    const finish = () => {
+      if (revision !== this.drawerMotionRevision) return;
+      if (!opening) {
+        drawer.hidden = true;
+        this.root.querySelector<HTMLButtonElement>(".wb-playlist-dismiss-zone")!.hidden = true;
+        this.root.querySelector<HTMLElement>(".wb-playlist-scrim")!.hidden = true;
+      }
+      this.drawerAnimation?.cancel();
+      this.drawerAnimation = undefined;
+    };
+    if (this.stage.classList.contains("reduce-motion") || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      finish();
+      return;
+    }
+    const animation = drawer.animate(
+      [{ transform: fromTransform === "none" ? "translateX(0)" : fromTransform, opacity: fromOpacity },
+        { transform: opening ? "translateX(0)" : "translateX(100%)", opacity: 1 }],
+      { duration: opening ? 420 : 300, easing: opening ? "cubic-bezier(.16,1,.3,1)" : "cubic-bezier(.7,0,.84,0)", fill: "both" },
+    );
+    this.drawerAnimation = animation;
+    animation.onfinish = finish;
   }
   private async refreshPlaylists() {
     if (!this.accountUserId) {
@@ -628,10 +648,11 @@ export class Workbench {
     const state = this.playlistExportState;
     if (!state || state.phase === "confirm") return "";
     if (!this.accountUserId || this.playlistExportSnapshot?.accountUserId !== this.accountUserId) return "";
+    const percent = Math.round(Math.min(100, Math.max(0, Number(state.overallPercent) || 0)));
     const status = state.phase === "running" ? "正在导出" : state.phase === "done" ? state.failed ? "部分完成" : "导出完成" : "导出中断 / 结果未完整确认";
     const action = this.rightDrawerMode === "playlist" && !this.playlistDetailOpen && this.selectedPlaylistId === state.playlistId
       ? `<button data-dj-action="playlist-export-return">查看歌单详情 ↗</button>` : "";
-    return `<section id="dj-playlist-export-status" class="wb-playlist-export-progress" aria-live="polite"><div class="wb-playlist-export-progress-head"><span><small>PLAYLIST EXPORT / 歌单导出</small><strong>${escapeHtml(state.name)} · ${status}</strong></span><span>${Math.round(state.overallPercent)}%</span>${action}</div><div class="wb-playlist-export-progress-track" role="progressbar" aria-label="歌单导出进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(state.overallPercent)}"><i style="width:${Math.round(state.overallPercent)}%"></i></div><div class="wb-playlist-export-progress-meta"><span>${state.completed} / ${state.total} 首</span><span>成功 ${state.success} · 失败 ${state.failed}</span><span>${escapeHtml(state.stage)}</span></div>${state.currentTrack ? `<small class="wb-playlist-export-current">${escapeHtml(state.currentTrack)}</small>` : ""}${state.message ? `<p role="status">${escapeHtml(state.message)}</p>` : ""}</section>`;
+    return `<section id="dj-playlist-export-status" class="wb-playlist-export-progress" aria-live="polite"><div class="wb-playlist-export-progress-head"><span><small>PLAYLIST EXPORT / 歌单导出</small><strong>${escapeHtml(state.name)} · ${status}</strong></span><span>${percent}%</span>${action}</div><div class="wb-playlist-export-progress-track" role="progressbar" aria-label="歌单导出进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="--dj-progress:${percent / 100}"></i></div><div class="wb-playlist-export-progress-meta"><span>${state.completed} / ${state.total} 首</span><span>成功 ${state.success} · 失败 ${state.failed}</span><span>${escapeHtml(state.stage)}</span></div>${state.currentTrack ? `<small class="wb-playlist-export-current">${escapeHtml(state.currentTrack)}</small>` : ""}${state.message ? `<p role="status">${escapeHtml(state.message)}</p>` : ""}</section>`;
   }
   private renderPlaylistExportConfirmation(playlist: NeteasePlaylist) {
     return `<div class="wb-playlist-confirm-layer"><section class="wb-playlist-export-confirm" role="dialog" aria-modal="true" aria-labelledby="playlist-export-title"><span class="wb-playlist-export-eyebrow">NETEASE CLOUD / EXPORT</span><h3 id="playlist-export-title">确认导出歌单？</h3><strong>${escapeHtml(playlist.name)}</strong><p>将从网易云读取完整曲目并导出到所选目录。确认前不会发起导出或写入文件；开始后可关闭此面板，任务会继续。</p><label class="wb-playlist-export-target">目标目录<code>${escapeHtml(this.outputRoot)}</code></label>${this.playlistDrawerNotice ? `<p class="wb-playlist-notice" role="status">${escapeHtml(this.playlistDrawerNotice)}</p>` : ""}<div><button data-dj-action="playlist-export-cancel">取消</button><button data-dj-action="playlist-export-confirm" ${this.mutationBusy ? "disabled" : ""}>确认导出</button></div></section></div>`;
@@ -748,7 +769,10 @@ export class Workbench {
   private onPlayerState(state: DjPlayerState) {
     const previousTrackId = this.playerTrackId;
     const previousStatus = this.playerState.status;
+    const queueChanged = state.index !== this.djQueueView.index || state.queue.length !== this.djQueueView.queue.length ||
+      state.queue.some((track, index) => track.id !== this.djQueueView.queue[index]?.id || track.coverUrl !== this.djQueueView.queue[index]?.coverUrl);
     this.playerState = state;
+    if (queueChanged) this.djQueueView = { queue: state.queue, index: state.index };
     this.persistPlayerSnapshot(state);
     const trackId = state.track?.id ?? "";
     if (trackId !== previousTrackId) {
@@ -762,6 +786,7 @@ export class Workbench {
   getDjSpectrum() {
     return this.djSpectrum?.read(this.playerState.status === "playing") ?? null;
   }
+  getDjQueueView() { return this.djQueueView; }
   private restorePlayerSnapshot() {
     try {
       const saved = JSON.parse(localStorage.getItem(playerStorageKey) ?? "null");
@@ -783,7 +808,7 @@ export class Workbench {
     } catch { /* A damaged local snapshot must not prevent the DJ workspace from loading. */ }
   }
   private persistPlayerSnapshot(state: DjPlayerState) {
-    if (!isDjPrototype) return;
+    if (!isDjPrototype || !this.playerSnapshotRestored) return;
     const now = Date.now();
     if (state.status === "playing" && now - this.playerSnapshotWriteAt < 1000 && state.track?.id === this.playerTrackId) return;
     this.playerSnapshotWriteAt = now;
@@ -1202,7 +1227,16 @@ export class Workbench {
     if (state.phase === "done" || state.phase === "error") this.stage.dataset.playlistExportComplete = "true";
     else delete this.stage.dataset.playlistExportComplete;
     const current = this.root.querySelector<HTMLElement>("#dj-playlist-export-status");
-    if (current) current.outerHTML = this.renderPlaylistExportBanner();
+    if (current) {
+      const oldFill = current.querySelector<HTMLElement>(".wb-playlist-export-progress-track i");
+      const fromTransform = oldFill ? getComputedStyle(oldFill).transform : "scaleX(0)";
+      current.outerHTML = this.renderPlaylistExportBanner();
+      const newFill = this.root.querySelector<HTMLElement>("#dj-playlist-export-status .wb-playlist-export-progress-track i");
+      if (newFill && oldFill && !this.stage.classList.contains("reduce-motion") && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        newFill.animate([{ transform: fromTransform }, { transform: `scaleX(${Math.min(1, Math.max(0, Number(state.overallPercent) / 100 || 0))})` }],
+          { duration: 360, easing: "cubic-bezier(.16,1,.3,1)" });
+      }
+    }
     else if (this.rightDrawerOpen && this.rightDrawerMode === "playlist") this.renderRightDrawer();
     const exportRunning = state.phase === "running";
     this.root.querySelectorAll<HTMLButtonElement>("[data-dj-action='playlist-card-export']").forEach(button => {
@@ -1287,7 +1321,7 @@ export class Workbench {
         ? `<button data-dj-action="download-track" ${this.singleTrackExportBusy ? "disabled" : ""}>${this.singleTrackExportBusy ? "↻ 下载中…" : "↓ 下载"}</button><button data-dj-action="player-add">＋ 加入歌单</button>`
         : `<button disabled>↓ 下载</button><button disabled>＋ 加入歌单</button>`;
       player.innerHTML = `
-        <div class="wb-kicker">NOW PLAYING / PLAYER <span id="dj-player-status"></span></div>
+        <div class="wb-kicker">NOW PLAYING / PLAYER <span id="dj-player-status" role="status" aria-live="polite"></span></div>
         ${track ? `<button class="wb-dj-player-open" data-dj-action="track-detail" aria-label="打开 ${escapeHtml(track.title)} 的 3D 歌曲档案"><span class="wb-dj-player-cover">${track.coverUrl ? `<img src="${escapeHtml(track.coverUrl)}" alt="${escapeHtml(track.title)} 封面"/>` : `<i aria-hidden="true">♫</i>`}</span><span class="wb-dj-player-info"><small>NETEASE MUSIC / NOW PLAYING</small><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artists.join(" / ") || "未知艺人")} · ${escapeHtml(track.album)}</span><i class="wb-dj-open-hint">打开歌曲 3D 档案 ↗</i></span></button>` : `<div class="wb-playlist-empty wb-player-empty"><strong>尚未选择曲目</strong><small>从云端歌单或在线搜索中选择歌曲后，播放器会显示真实封面与播放进度。</small></div>`}
         <div class="wb-dj-progress"><input id="dj-player-seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="歌曲播放进度" disabled/><div><span id="dj-player-current">00:00</span><span id="dj-player-duration">00:00</span></div></div>
         <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport"><button data-dj-action="player-previous" ${track ? "" : "disabled"} aria-label="上一首">⏮</button><button class="wb-dj-play-toggle" data-dj-action="player-toggle" ${track ? "" : "disabled"} aria-label="播放">▶</button><button data-dj-action="player-next" ${track ? "" : "disabled"} aria-label="下一首">⏭</button></div></div>
@@ -1300,6 +1334,8 @@ export class Workbench {
   private syncDjPlayerUi() {
     if (!isDjPrototype) return;
     const state = this.playerState;
+    const player = this.root.querySelector<HTMLElement>(".wb-dj-player");
+    if (player && player.dataset.playback !== state.status) player.dataset.playback = state.status;
     const labels: Record<string, string> = { idle: "WAITING FOR TRACK", loading: "正在载入音源…", playing: "正在播放", paused: "已暂停", error: "播放失败" };
     const status = this.root.querySelector<HTMLElement>("#dj-player-status");
     if (status) status.textContent = labels[state.status] ?? "";

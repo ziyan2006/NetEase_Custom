@@ -41,6 +41,7 @@ import "./dj-prototype.css";
 import "./startup.css";
 import "./wallpaper.css";
 import { Workbench } from "./workbench";
+import "./dj-motion.css";
 import { djPreview, setDjPreview } from "./dj-records";
 import { createPlaylistExportState, failPlaylistExport, reducePlaylistExportEvent, toSceneExportProgress } from "./dj-export.js";
 let workbench: Workbench | undefined;
@@ -1243,6 +1244,7 @@ function frame(ms: number) {
   viewer?.setTheme(theme);
   playground?.tick(time);
   scene?.setDjSpectrum(workbench?.getDjSpectrum() ?? null);
+  scene?.setDjQueue(workbench?.getDjQueueView() ?? null);
   const cinema =
     mode === "boot" && ready
       ? bootFrame(frozenTime ?? time - bootStart)

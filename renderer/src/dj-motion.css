@@ -1,0 +1,261 @@
+/* DJ motion dialect: precise terminal marks, short mechanical responses, and one
+   copper signal path. The archive's authored 3D/boot sequences stay untouched. */
+html[data-dj-prototype="true"] {
+  --dj-motion-instant: 90ms;
+  --dj-motion-fast: 180ms;
+  --dj-motion-standard: 320ms;
+  --dj-motion-panel: 420ms;
+  --dj-ease-utility: cubic-bezier(.2, .75, .25, 1);
+  --dj-ease-arrive: cubic-bezier(.16, 1, .3, 1);
+  --dj-ease-depart: cubic-bezier(.7, 0, .84, 0);
+}
+
+/* Workbench wayfinding: the selected rail grows in place, so no layout moves. */
+html[data-dj-prototype="true"] .wb-nav button {
+  transition: color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-nav button::before {
+  top: 10px;
+  height: 33px;
+  transform: scaleY(.32);
+  transform-origin: center;
+  transition: transform var(--dj-motion-standard) var(--dj-ease-arrive),
+    background-color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-nav button:is(:hover, :focus-visible, [aria-pressed="true"])::before {
+  transform: scaleY(1);
+}
+html[data-dj-prototype="true"] .wb-nav button > span,
+html[data-dj-prototype="true"] .wb-dj-link > span {
+  display: inline-block;
+  transition: translate var(--dj-motion-fast) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] .wb-nav button:is(:hover, :focus-visible) > span,
+html[data-dj-prototype="true"] .wb-dj-link:is(:hover, :focus-visible) > span {
+  translate: 4px 0;
+}
+html[data-dj-prototype="true"] .wb-dj-link {
+  position: relative;
+  transition: color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-dj-link::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: #a27849;
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dj-motion-standard) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] .wb-dj-link:is(:hover, :focus-visible)::after { transform: scaleX(1); }
+
+/* Preserve the requested out-of-focus backdrop while the right terminal docks. */
+html[data-dj-prototype="true"] .three-scene {
+  transition: opacity var(--dj-motion-panel), filter 340ms var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] #stage[data-dj-drawer-open="true"] .three-scene {
+  filter: blur(6px) saturate(.78);
+  transform: none;
+}
+html[data-dj-prototype="true"] #stage[data-playlist-exporting="true"][data-dj-drawer-open="true"] .three-scene {
+  filter: none;
+}
+html[data-dj-prototype="true"] .wb-playlist-scrim {
+  transition: opacity 340ms var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-playlist-drawer::before {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  background: #a27849;
+  content: "";
+  pointer-events: none;
+  transform: scaleX(0);
+  transform-origin: right;
+  transition: transform 560ms var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] #stage[data-dj-drawer-open="true"] .wb-playlist-drawer::before {
+  transform: scaleX(1);
+}
+
+/* Cards keep their actions discoverable; hovering only sharpens the signal. */
+html[data-dj-prototype="true"] .wb-playlist-card,
+html[data-dj-prototype="true"] .wb-search-table tbody tr,
+html[data-dj-prototype="true"] .wb-playlist-track-row {
+  transition: background-color var(--dj-motion-fast) var(--dj-ease-utility),
+    border-color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-playlist-card:is(:hover, :focus-within) { transform: none; }
+html[data-dj-prototype="true"] .wb-playlist-card::before {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  background: #a27849;
+  content: "";
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--dj-motion-standard) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] .wb-playlist-card:is(:hover, :focus-within)::before { transform: scaleY(1); }
+html[data-dj-prototype="true"] .wb-playlist-card-cover img {
+  transition: transform var(--dj-motion-standard) var(--dj-ease-arrive),
+    filter var(--dj-motion-standard) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-playlist-card:is(:hover, :focus-within) .wb-playlist-card-cover img {
+  transform: scale(1.025);
+  filter: grayscale(.28) contrast(.98);
+}
+html[data-dj-prototype="true"] .wb-playlist-card-actions {
+  opacity: .78;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-playlist-card:is(:hover, :focus-within) .wb-playlist-card-actions { opacity: 1; }
+html[data-dj-prototype="true"] .wb-search-table tbody tr:hover,
+html[data-dj-prototype="true"] .wb-playlist-track-row:hover { background: rgba(162, 120, 73, .09); }
+
+/* The player is a control surface. Selection travels to the cover and the
+   archive hint, while transport and seek respond immediately to the hand. */
+html[data-dj-prototype="true"] .wb-dj-player-open { position: relative; }
+html[data-dj-prototype="true"] .wb-dj-player-open::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  width: 2px;
+  background: #a27849;
+  content: "";
+  transform: scaleY(0);
+  transition: transform var(--dj-motion-standard) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] .wb-dj-player-open:is(:hover, :focus-visible)::before { transform: scaleY(1); }
+html[data-dj-prototype="true"] .wb-dj-player-cover,
+html[data-dj-prototype="true"] .wb-dj-open-hint {
+  transition: translate var(--dj-motion-fast) var(--dj-ease-arrive),
+    border-color var(--dj-motion-fast) var(--dj-ease-utility),
+    color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-dj-player-open:is(:hover, :focus-visible) :is(.wb-dj-player-cover, .wb-dj-open-hint) {
+  translate: 4px 0;
+}
+html[data-dj-prototype="true"] .wb-dj-player-open:is(:hover, :focus-visible) .wb-dj-player-cover { border-color: #a27849; }
+html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled) {
+  transition: filter var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled):is(:hover, :focus-visible) { filter: brightness(1.16); }
+html[data-dj-prototype="true"] .wb-dj-progress input::-webkit-slider-thumb {
+  transition: transform var(--dj-motion-fast) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled):is(:hover, :focus-visible)::-webkit-slider-thumb { transform: scale(1.3); }
+html[data-dj-prototype="true"] .wb-dj-progress input::-moz-range-thumb { transition: transform var(--dj-motion-fast) var(--dj-ease-arrive); }
+html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled):is(:hover, :focus-visible)::-moz-range-thumb { transform: scale(1.3); }
+html[data-dj-prototype="true"] .wb-dj-player[data-playback="loading"] #dj-player-status::before,
+html[data-dj-prototype="true"] .wb-dj-player[data-playback="playing"] #dj-player-status::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  background: #a27849;
+  content: "";
+  vertical-align: 1px;
+}
+html[data-dj-prototype="true"] .wb-dj-player[data-playback="loading"] #dj-player-status::before {
+  animation: dj-signal-blink 700ms steps(2, end) infinite;
+}
+
+/* Compact tactile feedback is shared by the tools, dialog decisions and agent. */
+html[data-dj-prototype="true"] :is(
+  .wb-playlist-close, .wb-playlist-back, .wb-playlist-tools > button,
+  .wb-playlist-card-actions button, .wb-playlist-detail-actions button,
+  .wb-playlist-track-actions button, .wb-search-actions button,
+  .wb-dj-transport button, .wb-dj-player-actions button, .wb-dj-controls button,
+  .wb-playlist-export-confirm button, .wb-agent-button,
+  .wb-agent-card-actions button, .wb-agent-track button,
+  .dj-account-actions button, .dj-cookie-actions button
+) {
+  transition: background-color var(--dj-motion-fast) var(--dj-ease-utility),
+    border-color var(--dj-motion-fast) var(--dj-ease-utility),
+    color var(--dj-motion-fast) var(--dj-ease-utility),
+    transform var(--dj-motion-fast) var(--dj-ease-arrive);
+}
+html[data-dj-prototype="true"] :is(
+  .wb-playlist-close, .wb-playlist-back, .wb-playlist-tools > button,
+  .wb-playlist-card-actions button, .wb-playlist-detail-actions button,
+  .wb-playlist-track-actions button, .wb-search-actions button,
+  .wb-dj-transport button, .wb-dj-player-actions button, .wb-dj-controls button,
+  .wb-playlist-export-confirm button, .wb-agent-button,
+  .wb-agent-card-actions button, .wb-agent-track button,
+  .dj-account-actions button, .dj-cookie-actions button
+):active:not(:disabled) { transform: translateY(1px) scale(.985); transition-duration: var(--dj-motion-instant); }
+html[data-dj-prototype="true"] #stage .workbench :is(button, input, select, textarea):focus-visible,
+html[data-dj-prototype="true"] .dj-account-modal :is(button, input):focus-visible {
+  outline: 2px solid #a27849;
+  outline-offset: 3px;
+}
+html[data-dj-prototype="true"] :is(.wb-playlist-search, .wb-dj-root > div, .wb-agent-composer) {
+  transition: border-color var(--dj-motion-fast) var(--dj-ease-utility),
+    box-shadow var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] :is(.wb-playlist-search, .wb-dj-root > div, .wb-agent-composer):focus-within {
+  border-color: #a27849;
+  box-shadow: inset 0 -1px #a27849;
+}
+html[data-dj-prototype="true"] .wb-agent-session {
+  transition: background-color var(--dj-motion-fast) var(--dj-ease-utility),
+    border-color var(--dj-motion-fast) var(--dj-ease-utility);
+}
+html[data-dj-prototype="true"] .wb-agent-prompts button { transition: border-color var(--dj-motion-fast), background-color var(--dj-motion-fast); }
+html[data-dj-prototype="true"] .wb-agent-prompts button i { transition: translate var(--dj-motion-fast) var(--dj-ease-arrive); }
+html[data-dj-prototype="true"] .wb-agent-prompts button:is(:hover, :focus-visible) i { translate: 4px 0; }
+
+/* A confirmation is a short terminal decision, not another full page. */
+html[data-dj-prototype="true"] .wb-playlist-confirm-layer { animation: dj-decision-backdrop 180ms var(--dj-ease-utility) both; }
+html[data-dj-prototype="true"] .wb-playlist-export-confirm { animation: dj-decision-enter var(--dj-motion-standard) var(--dj-ease-arrive) both; }
+html[data-dj-prototype="true"] .wb-playlist-export-progress-track i {
+  width: 100%;
+  transform: scaleX(var(--dj-progress, 0));
+  transform-origin: left center;
+  transition: none;
+}
+
+/* Login confirmation resolves to a stable seal rather than spinning forever. */
+html[data-dj-prototype="true"] .dj-auth-seal::before,
+html[data-dj-prototype="true"] .dj-auth-seal::after { animation: none; }
+html[data-dj-prototype="true"] .dj-account-qr[data-state="authorized"] .dj-auth-seal::before { animation: dj-auth-orbit 1s var(--dj-ease-arrive) 1 both; }
+html[data-dj-prototype="true"] .dj-account-qr[data-state="authorized"] .dj-auth-seal::after { animation: dj-auth-orbit 1.25s var(--dj-ease-arrive) 1 reverse both; }
+
+@keyframes dj-signal-blink { to { opacity: .2; } }
+@keyframes dj-decision-backdrop { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dj-decision-enter { from { opacity: .65; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
+
+html[data-dj-prototype="true"] #stage.reduce-motion .workbench *,
+html[data-dj-prototype="true"] #stage.reduce-motion .workbench *::before,
+html[data-dj-prototype="true"] #stage.reduce-motion .workbench *::after,
+html[data-dj-prototype="true"] #stage.reduce-motion .three-scene,
+html[data-dj-prototype="true"] #stage.reduce-motion .dj-account-modal * {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-dj-prototype="true"] .workbench *,
+  html[data-dj-prototype="true"] .workbench *::before,
+  html[data-dj-prototype="true"] .workbench *::after,
+  html[data-dj-prototype="true"] .three-scene,
+  html[data-dj-prototype="true"] .dj-account-modal * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+@media (hover: none) {
+  html[data-dj-prototype="true"] .wb-playlist-card-actions { opacity: 1; }
+}

@@ -40,6 +40,8 @@ import { labelMarkSvg } from "./brand";
 import { isDjPrototype } from "./wallpaper";
 import { archiveFraming } from "./viewport-layout";
 import { cameraFacingSpectrumLane, djSpectrumBandAtScreenX, djSpectrumLaneDisplacement, type PlayerSpectrumFrame } from "./dj-spectrum.js";
+import { djCoverSlots, DJ_COVER_RADIUS, type DjCoverSlot } from "./dj-cover-lane.js";
+import type { NeteaseTrack } from "./yesmusic-api";
 import { ArchiveDrag, ArchivePlaneMomentum, type DragAxis, type DragProjection, type DragPosition } from "./archive-drag";
 import { assetUrl as publicAsset } from "./asset-url";
 import {
@@ -101,6 +103,9 @@ export class ArchiveScene {
   }
   revealImmediately() { this.reveal = this.targetReveal; }
   dispose() {
+    for (const texture of this.djCoverTextures.values()) texture.dispose();
+    this.djCoverTextures.clear();
+    this.djCoverFallback?.dispose();
     this.precision.dispose();
     this.inputEvents.abort();
     this.cancelPointer();
@@ -149,6 +154,12 @@ export class ArchiveScene {
   setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
   private djSpectrum: PlayerSpectrumFrame | null = null;
+  private djQueueView: { queue: NeteaseTrack[]; index: number } | null = null;
+  private djCoverSlots: DjCoverSlot[] = [];
+  private djCoverCards: THREE.Group[] = [];
+  private djCoverTextures = new Map<string, THREE.Texture>();
+  private djCoverFailures = new Set<string>();
+  private djCoverFallback?: THREE.CanvasTexture;
   private flatMix = 0;
   private rhythm = new RhythmMotion();
   private rhythmStyle: RhythmStyle = "legacy";
@@ -161,6 +172,190 @@ export class ArchiveScene {
     this.playfield = { enabled, bands, strength, flatten, target, breathing };
   }
   setDjSpectrum(frame: PlayerSpectrumFrame | null) { this.djSpectrum = frame; }
+  setDjQueue(view: { queue: NeteaseTrack[]; index: number } | null) {
+    if (this.djQueueView === view) return;
+    this.djQueueView = view;
+    this.syncDjCoverSlots();
+    this.renderState.invalidate();
+  }
+  private coverSource(raw: string | null) {
+    if (!raw) return null;
+    try {
+      const url = new URL(raw, location.href);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      if (url.protocol === "http:" && url.hostname.endsWith(".music.126.net")) url.protocol = "https:";
+      return url.href;
+    } catch { return null; }
+  }
+  private coverFallbackTexture() {
+    if (this.djCoverFallback) return this.djCoverFallback;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 512;
+    const context = canvas.getContext("2d")!;
+    context.fillStyle = "#e8e4dc";
+    context.fillRect(0, 0, 512, 512);
+    context.fillStyle = "#252624";
+    context.beginPath();
+    context.moveTo(0, 412); context.lineTo(320, 74); context.lineTo(450, 204); context.lineTo(146, 512);
+    context.fill();
+    context.fillStyle = "#a27849";
+    context.fillRect(32, 32, 112, 12);
+    context.fillStyle = "#252624";
+    context.font = "bold 35px sans-serif";
+    context.fillText("YESMUSIC", 32, 483);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    this.djCoverFallback = texture;
+    return texture;
+  }
+  private coverTexture(raw: string | null) {
+    const source = this.coverSource(raw);
+    if (!source || this.djCoverFailures.has(source)) return this.coverFallbackTexture();
+    const cached = this.djCoverTextures.get(source);
+    if (cached) return cached;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 512;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(this.coverFallbackTexture().image as HTMLCanvasElement, 0, 0);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    this.djCoverTextures.set(source, texture);
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      if (this.djCoverTextures.get(source) !== texture) return;
+      const scale = Math.min(512 / image.naturalWidth, 512 / image.naturalHeight);
+      const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+      context.drawImage(image, (512 - width) / 2, (512 - height) / 2, width, height);
+      texture.needsUpdate = true;
+      this.renderState.invalidate();
+    };
+    image.onerror = () => {
+      if (this.djCoverTextures.get(source) !== texture) return;
+      this.djCoverFailures.add(source);
+      for (const card of this.djCoverCards) {
+        const art = card.userData.art as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+        if (art.material.map === texture) { art.material.map = this.coverFallbackTexture(); art.material.needsUpdate = true; }
+      }
+      texture.dispose();
+      this.djCoverTextures.delete(source);
+      this.renderState.invalidate();
+    };
+    image.src = source;
+    return texture;
+  }
+  private createDjCoverCards() {
+    if (!isDjPrototype) return;
+    // Reuse the source archive shell, but compress only this separate cover
+    // lane's depth. The shared ivory array materials remain untouched.
+    const source = this.model.children.find(child => child.userData.surface === "Frosted_Polymer") as THREE.Mesh;
+    const shellGeometry = source.geometry.clone().scale(1, 1, .22);
+    const edgeSource = this.model.children.find(child => child.userData.surface === "Ivory_Edges") as THREE.Mesh;
+    const edgeGeometry = edgeSource.geometry.clone().scale(1, 1, .22);
+    const glassMaterial = new THREE.MeshPhysicalMaterial({
+      color: "#f1eee7", roughness: .38, metalness: 0,
+      transmission: .48, thickness: .10, ior: 1.38,
+      transparent: true, opacity: .52, depthWrite: false,
+      attenuationColor: new THREE.Color("#e6e2d9"), attenuationDistance: 2.4,
+      clearcoat: .24, clearcoatRoughness: .3,
+    });
+    const edgeMaterial = new THREE.MeshPhysicalMaterial({
+      color: "#f8f6ef", roughness: .27, metalness: .04,
+      transparent: true, opacity: .58, depthWrite: false,
+      clearcoat: .35, clearcoatRoughness: .22,
+    });
+    const artGeometry = new THREE.PlaneGeometry(3.18, 3.18);
+    const markGeometry = new THREE.PlaneGeometry(3.18, .035);
+    for (let index = 0; index < DJ_COVER_RADIUS * 2 + 1; index++) {
+      const card = new THREE.Group();
+      const shell = new THREE.Mesh(shellGeometry, glassMaterial);
+      const edges = new THREE.Mesh(edgeGeometry, edgeMaterial);
+      const artMaterial = new THREE.MeshBasicMaterial({
+        map: this.coverFallbackTexture(), side: THREE.DoubleSide,
+        transparent: true, opacity: .90, depthWrite: true, color: "#f4f2ed",
+      });
+      // A light diffusion layer keeps album art legible through frosted glass.
+      artMaterial.onBeforeCompile = shader => {
+        shader.fragmentShader = shader.fragmentShader.replace("#include <map_fragment>", `
+          #ifdef USE_MAP
+            vec2 radius = vec2(.0018);
+            vec4 ink = texture2D(map, vMapUv) * .64
+              + texture2D(map, vMapUv + vec2(radius.x, 0.0)) * .09
+              + texture2D(map, vMapUv - vec2(radius.x, 0.0)) * .09
+              + texture2D(map, vMapUv + vec2(0.0, radius.y)) * .09
+              + texture2D(map, vMapUv - vec2(0.0, radius.y)) * .09;
+            diffuseColor *= ink;
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.94, .93, .90), .06);
+          #endif
+        `);
+      };
+      artMaterial.customProgramCacheKey = () => "dj-sleeve-frosted-ink-v1";
+      const art = new THREE.Mesh(artGeometry, artMaterial);
+      // Keep the image coplanar with the compressed shell's front face.
+      art.position.set(.1, 1.94, .061);
+      const mark = new THREE.Mesh(markGeometry, new THREE.MeshBasicMaterial({
+        color: "#a27849", transparent: true, opacity: .9, depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mark.position.set(.1, 3.56, .063);
+      mark.visible = false;
+      card.add(shell, edges, art, mark);
+      card.userData.art = art;
+      card.userData.mark = mark;
+      card.userData.glassDepthScale = .22;
+      card.visible = false;
+      this.djCoverCards.push(card);
+      this.scene.add(card);
+    }
+  }
+  private syncDjCoverSlots() {
+    this.djCoverSlots = [];
+    for (const card of this.djCoverCards) card.visible = false;
+    const view = this.djQueueView;
+    const wanted = new Set((view ? djCoverSlots(view.queue.length, view.index, 0, 0) : [])
+      .map(slot => this.coverSource(view!.queue[slot.trackIndex].coverUrl)).filter((url): url is string => Boolean(url)));
+    for (const [url, texture] of this.djCoverTextures) {
+      if (wanted.has(url)) continue;
+      texture.dispose();
+      this.djCoverTextures.delete(url);
+    }
+  }
+  private updateDjCoverCards(field: (row: number, lane: number) => number, hoverLift: (cell: ArchiveCell) => number,
+    trackX: number, entryZ: number, detail: number, showCovers: boolean) {
+    const view = this.djQueueView;
+    const enabled = showCovers && this.looping && this.presence > .05 && view && view.index >= 0;
+    this.model.visible = true;
+    if (!enabled || !view) { for (const card of this.djCoverCards) card.visible = false; return; }
+    const anchorLane = this.selectedCell.lane;
+    const anchorRow = this.selectedCell.row;
+    this.djCoverSlots = djCoverSlots(view.queue.length, view.index, anchorLane, anchorRow);
+    const visibleRows = new Set(this.drawnCells.filter(cell => cell.lane === anchorLane).map(cell => cell.row));
+    visibleRows.add(anchorRow);
+    for (let index = 0; index < this.djCoverCards.length; index++) {
+      const card = this.djCoverCards[index], slot = this.djCoverSlots[index];
+      if (!slot || !visibleRows.has(slot.row)) { card.visible = false; continue; }
+      const track = view.queue[slot.trackIndex];
+      const cell = { lane: slot.lane, row: slot.row };
+      card.userData.archiveCell = cell;
+      const position = this.cellPosition(cell);
+      if (sameCell(cell, this.selectedCell)) {
+        card.position.copy(this.model.position);
+        card.rotation.copy(this.model.rotation);
+      } else {
+        card.position.set(position.x - trackX,
+          position.y + field(cell.row, cell.lane) + hoverLift(cell) - this.presentationDrop(cell),
+          position.z + entryZ + this.rail.value);
+        card.rotation.set((field(cell.row + .5, cell.lane) - field(cell.row - .5, cell.lane)) * .024 * (1 - detail), 0, 0);
+      }
+      card.scale.setScalar(1);
+      (card.userData.mark as THREE.Mesh).visible = slot.active;
+      const art = card.userData.art as THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+      const texture = this.coverTexture(track.coverUrl);
+      if (art.material.map !== texture) { art.material.map = texture; art.material.needsUpdate = true; }
+      card.visible = true;
+      if (slot.active) this.model.visible = false;
+    }
+  }
   setRelayActive(active: boolean) {
     if (active === this.relayActive) return;
     this.cancelPointer(); this.setHover(null); this.relayActive = active;
@@ -590,6 +785,7 @@ export class ArchiveScene {
     this.drawLabel(0);
     this.syncExportScreen();
     this.scene.add(this.model);
+    this.createDjCoverCards();
     this.model.position.copy(this.cellPosition(poolCell(this.selectedSlot)));
     this.loaded = true;
   }
@@ -1146,13 +1342,14 @@ export class ArchiveScene {
     );
     this.raycaster.setFromCamera(this.cursor, this.camera);
     const hit = this.raycaster.intersectObjects(
-      [this.instances[0], this.model, ...this.outgoing.map((o) => o.group)],
+      [this.instances[0], ...(this.model.visible ? [this.model] : []), ...this.djCoverCards.filter(card => card.visible), ...this.outgoing.map((o) => o.group)],
       true,
     )[0];
     if (!hit) return null;
     if (hit.instanceId !== undefined) return { ...this.drawnCells[hit.instanceId] };
     let object: THREE.Object3D | null = hit.object;
     while (object) {
+      if (object.userData.archiveCell) return { ...object.userData.archiveCell };
       const copy = this.outgoing.find((o) => o.group === object);
       if (copy) return { ...copy.cell };
       object = object.parent;
@@ -1594,6 +1791,8 @@ export class ArchiveScene {
       .filter(x => x >= 0 && x <= 1);
     const spectrumLeft = spectrumXs.length ? Math.min(...spectrumXs) : 0;
     const spectrumRight = spectrumXs.length ? Math.max(...spectrumXs) : 1;
+    const showDjCovers = isDjPrototype && !cinematic && !targetDetail && this.detail < .1 && Boolean(this.djQueueView?.queue.length) &&
+      this.container.closest<HTMLElement>("#stage")?.dataset.workbench === "true" && !exportFocusActive;
     const field = (row: number, lane: number) => {
       if (cinematic)
         return cinematicField(
@@ -1639,6 +1838,9 @@ export class ArchiveScene {
           columnStrength(lane, this.laneFocus.value)) * (1 - this.flatMix) + breathing + pulseHeight +
         (activePlay && !this.reduced ? rhythmDisplacement(row, lane, time, play.bands, play.strength, rhythm, x) : 0) +
         djSpectrumLaneDisplacement(lane, spectrumLane, spectrum) +
+        // Lift the entire diagonal lane together, including files without
+        // covers, so neighbouring files keep the same silhouette.
+        (showDjCovers ? .8 * Math.exp(-.5 * ((lane - selectedLane) / .55) ** 2) : 0) +
         (this.relayLifts.get(cellKey({ row, lane })) ?? 0)
       );
     };
@@ -1946,6 +2148,9 @@ export class ArchiveScene {
       : this.visibility.update(this.camera, fog.far, trackX, entryZ + this.rail.value, this.extraCoverage);
     const hidden = new Set(this.outgoing.map(o => cellKey(o.cell)));
     hidden.add(cellKey(this.selectedCell));
+    const coverCells = new Set(showDjCovers && this.looping && this.presence > .05 && this.djQueueView
+      ? djCoverSlots(this.djQueueView.queue.length, this.djQueueView.index, selectedLane, selectedRow).map(cellKey)
+      : []);
     this.drawnCells = [];
     this.relayPoints.clear();
     this.matrixUpdates ??= new InstanceUpdates(this.instances[0].instanceMatrix);
@@ -1964,11 +2169,14 @@ export class ArchiveScene {
       const slope = field(row + .5, lane) - field(row - .5, lane);
       this.dummy.position.set(x, y, z);
       this.dummy.rotation.set(slope * .024 * (1 - detail), 0, 0);
-      this.dummy.scale.setScalar(1);
+      // Thin glass sleeves replace only their matching ivory instances.
+      // Retain packed cells for visibility/picking and collapse the old body.
+      this.dummy.scale.setScalar(coverCells.has(cellKey(cell)) ? 0 : 1);
       this.dummy.updateMatrix();
       if (play.enabled) this.relayPoints.set(cellKey(cell), { cell: { ...cell }, point: new THREE.Vector3(0, 3.5, 0).applyMatrix4(this.dummy.matrix) });
       this.matrixUpdates!.set(i * 16, this.dummy.matrix.elements);
     }
+    this.updateDjCoverCards(field, hoverLift, trackX, entryZ, detail, showDjCovers);
     const countChanged = this.instances[0].count !== this.drawnCells.length;
     const matricesChanged = this.matrixUpdates!.commit();
     for (const inst of this.instances) {
@@ -2158,6 +2366,21 @@ export class ArchiveScene {
         targetLane: cameraFacingSpectrumLane(this.laneFocus.value, this.camera.position.x >= this.cameraAim.x),
         visibleCells: this.drawnCells.filter(cell => cell.lane === cameraFacingSpectrumLane(this.laneFocus.value, this.camera.position.x >= this.cameraAim.x)).length,
       },
+      djCovers: (() => {
+        const activeIndex = this.djCoverSlots.findIndex(slot => slot.active);
+        const active = this.djCoverCards[activeIndex];
+        const visibleCards = this.djCoverCards.filter(card => card.visible);
+        return {
+          visible: visibleCards.length,
+          glassDepthScale: visibleCards.length ? .22 : null,
+          selectedIvoryVisible: this.model.visible,
+          activeTrackIndex: activeIndex < 0 ? -1 : this.djCoverSlots[activeIndex].trackIndex,
+          activeFileOffset: active?.visible ? Math.round(active.position.distanceTo(this.model.position) * 10000) / 10000 : null,
+          activeFileRotation: active?.visible ? Math.round((Math.abs(active.rotation.x - this.model.rotation.x) + Math.abs(active.rotation.y - this.model.rotation.y)) * 10000) / 10000 : null,
+          activeFileHeight: active?.visible ? Math.round(active.position.y * 1000) / 1000 : null,
+          highestCoverHeight: visibleCards.length ? Math.round(Math.max(...visibleCards.map(card => card.position.y)) * 1000) / 1000 : null,
+        };
+      })(),
       selectedIndexDim: this.model.children.find(child => child.userData.surface === "Index_Inlay")?.userData.subduedIndex?.value,
       returningIndexDims: this.outgoing.map(o => ({ cell: o.cell, dim: o.group.children.find(child => child.userData.surface === "Index_Inlay")?.userData.subduedIndex?.value })),
       cameraDistance: this.camera.position.distanceTo(this.cameraAim),
