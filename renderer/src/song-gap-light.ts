@@ -4,9 +4,9 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 /** Only the HDR emitter exceeds the threshold; covers and UI stay sharp. */
 export class SongGapBloom extends UnrealBloomPass {
   constructor() {
-    super(new THREE.Vector2(960, 540), .65, 0, 1.1);
+    super(new THREE.Vector2(960, 540), .28, 0, 1.1);
     // Keep the glow near the seam; large mip levels would wash over the UI.
-    this.compositeMaterial.uniforms.bloomFactors.value = [1, .28, 0, 0, 0];
+    this.compositeMaterial.uniforms.bloomFactors.value = [.72, .08, 0, 0, 0];
   }
   override setSize(width: number, height: number) { super.setSize(Math.max(1, width / 2), Math.max(1, height / 2)); }
 }
@@ -44,7 +44,7 @@ export class SongGapLight {
       ...(glow ? { map: glowTexture, blending: THREE.AdditiveBlending } : {}),
     });
     this.emitter = new THREE.Mesh(new THREE.PlaneGeometry(.4, 1, 1, 96).rotateX(-Math.PI / 2), material());
-    this.halo = new THREE.Mesh(new THREE.PlaneGeometry(1.25, 1, 1, 96).rotateX(-Math.PI / 2), material(true));
+    this.halo = new THREE.Mesh(new THREE.PlaneGeometry(.86, 1, 1, 96).rotateX(-Math.PI / 2), material(true));
     this.core = new THREE.Mesh(new THREE.PlaneGeometry(.12, 1, 1, 96).rotateX(-Math.PI / 2), material());
     for (const mesh of [this.emitter, this.halo, this.core]) {
       mesh.position.y = .012;
@@ -91,12 +91,12 @@ export class SongGapLight {
     // Dark pigments still produce a bright emitter. Normalize brightness,
     // keeping the secondary hue; the narrow hot core drives optical bloom.
     const peak = Math.max(.015, this.color.r, this.color.g, this.color.b);
-    this.emitter.material.color.copy(this.color).multiplyScalar(2.8 / peak);
-    this.halo.material.color.copy(this.color).multiplyScalar(1.1 / peak);
-    this.core.material.color.copy(this.color).multiplyScalar(1 / peak).lerp(this.white, .12).multiplyScalar(3.5);
+    this.emitter.material.color.copy(this.color).multiplyScalar(2.3 / peak);
+    this.halo.material.color.copy(this.color).multiplyScalar(.85 / peak);
+    this.core.material.color.copy(this.color).multiplyScalar(1 / peak).lerp(this.white, .1).multiplyScalar(2.8);
     this.emitter.material.opacity = this.opacity;
     this.core.material.opacity = this.opacity;
-    this.halo.material.opacity = this.opacity * .48;
+    this.halo.material.opacity = this.opacity * .28;
   }
 
   getStats() {
