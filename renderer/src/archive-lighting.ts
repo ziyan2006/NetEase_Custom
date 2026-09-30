@@ -29,10 +29,12 @@ export function createArchiveLighting(
     refined ? "#fff4e5" : "#fff7ed",
     refined ? 1.7 : 1.4,
   );
+  key.name = "archive-key";
   key.position.set(
     ...((refined ? [-8, 14, 4] : [-6, 14, -5]) as [number, number, number]),
   );
   const fill = new THREE.DirectionalLight("#ffffff", refined ? 0.3 : 0.6);
+  fill.name = "archive-fill";
   fill.position.set(7, 8, -10);
   scene.add(key, fill);
   return key;

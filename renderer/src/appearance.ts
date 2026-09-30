@@ -9,6 +9,7 @@ type Palette = { high: Surface; low?: Surface };
 // The array and selected file share geometry. Morph their surface properties
 // on one mesh so transparent shells never overlap during a quality change.
 export class CardAppearance {
+  constructor(private whiteBalance = { value: 0 }) {}
   private palettes = new Map<string, Palette>();
   disposeSources() {
     for (const palette of this.palettes.values()) { palette.high.dispose(); palette.low?.dispose(); }
@@ -28,7 +29,7 @@ export class CardAppearance {
         // Cloned archive groups retain their already-themed materials and
         // uniform references. Wrapping them again duplicates GLSL uniforms.
         if (mesh.userData.themeAmount) continue;
-        mesh.userData.themeAmount = themeMaterial(mesh.material as THREE.Material, "Printed_Canvas");
+        mesh.userData.themeAmount = themeMaterial(mesh.material as THREE.Material, "Printed_Canvas", false, undefined, this.whiteBalance);
         continue;
       }
       const mat = palette.high.clone();
@@ -89,7 +90,7 @@ export class CardAppearance {
       mat.customProgramCacheKey = () =>
         `archive-surface-clarity-${name}-${Boolean(palette.low)}`;
       mesh.userData.subduedIndex = { value: 0 };
-      mesh.userData.themeAmount = themeMaterial(mat, name, false, mesh.userData.subduedIndex);
+      mesh.userData.themeAmount = themeMaterial(mat, name, false, mesh.userData.subduedIndex, this.whiteBalance);
     }
   }
 

@@ -20,6 +20,7 @@ export class DjPlayer {
     this.shufflePosition = -1;
     this.shuffleBag = [];
     this.stepDirection = 0;
+    this.queueRevision = 0;
     this.state = { queue: [], index: -1, status: "idle", currentTime: 0, duration: 0, error: "" };
     this.audio.preload = "metadata";
     this.audio.addEventListener("loadedmetadata", () => this.syncTime());
@@ -48,6 +49,7 @@ export class DjPlayer {
       playbackMode: this.playbackMode,
       playbackQueue,
       playbackIndex: this.playbackMode === "shuffle" ? this.shufflePosition : this.state.index,
+      queueRevision: this.queueRevision,
       stepDirection: this.stepDirection,
       track: this.state.queue[this.state.index] ?? null,
     };
@@ -96,6 +98,7 @@ export class DjPlayer {
   async setQueue(queue, index = 0, autoplay = true) {
     const valid = Array.isArray(queue) ? queue.filter(track => track && String(track.id)) : [];
     if (!valid.length) return this.clear();
+    this.queueRevision++;
     const selectedIndex = Math.max(0, Math.min(valid.length - 1, Number(index) || 0));
     this.stepDirection = 0;
     this.restorePosition = 0;
@@ -114,6 +117,7 @@ export class DjPlayer {
   restoreQueue(queue, index = 0, currentTime = 0, duration = 0) {
     const valid = Array.isArray(queue) ? queue.filter(track => track && String(track.id)) : [];
     if (!valid.length) return this.clear();
+    this.queueRevision++;
     const selectedIndex = Math.max(0, Math.min(valid.length - 1, Number(index) || 0));
     this.stepDirection = 0;
     if (this.playbackMode === "shuffle") this.startShuffle(selectedIndex, valid);

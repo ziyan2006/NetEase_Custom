@@ -8,6 +8,8 @@ import { SharedDepthAO, SharedDepthBokeh } from "./shared-depth";
 import { disposeThreeTree } from "./three-resources";
 import { ThemeWave } from "./theme-motion";
 import { themeMaterial, themeEnvironment } from "./theme-material";
+import type { SongAmbientLight } from "./song-color.js";
+import { SongGapLight, SongGapBloom } from "./song-gap-light";
 import { RhythmMotion, rhythmDisplacement, quietBands, type MusicBands, type RhythmStyle } from "./archive-play-motion";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { createArchiveLighting, type LightingLook } from "./archive-lighting";
@@ -167,6 +169,24 @@ export class ArchiveScene {
   private themeAttribute?: THREE.InstancedBufferAttribute;
   get themeAmount() { return this.theme.background(performance.now() / 1000); }
   setTheme(dark: boolean, immediate = false) { this.theme.set(dark, performance.now() / 1000, this.selectedCell, immediate); }
+  setSongWhiteBalance(value: number, immediate = false) {
+    this.songWhiteTarget = THREE.MathUtils.clamp(value, 0, 1);
+    if (immediate) this.songWhiteBalance.value = this.songWhiteTarget;
+  }
+  private songLighting = { color: new THREE.Color(), strength: 0, keyColor: new THREE.Color(), keyStrength: 0 };
+  private songLightTarget = 0;
+  private songKeyTarget = 0;
+  private songGapLight: SongGapLight;
+  private songGapBloom = new SongGapBloom();
+  setSongGapColor(rgb: [number, number, number] | null) { this.songGapLight.setColor(rgb); }
+  setSongAmbientLight(light: SongAmbientLight | null) {
+    this.songLightTarget = light?.strength ?? 0;
+    this.songKeyTarget = light?.keyStrength ?? 0;
+    if (light) {
+      this.songLighting.color.setRGB(...light.rgb.map(value => value / 255) as [number, number, number], THREE.SRGBColorSpace);
+      this.songLighting.keyColor.setRGB(...light.keyRgb.map(value => value / 255) as [number, number, number], THREE.SRGBColorSpace);
+    }
+  }
   private playfield = { enabled: false, bands: quietBands(), strength: 1, flatten: 0, target: null as string | null, breathing: true };
   private djSpectrum: PlayerSpectrumFrame | null = null;
   private djQueueView: DjQueueView | null = null;
@@ -180,6 +200,8 @@ export class ArchiveScene {
   private djCoverFallback?: THREE.CanvasTexture;
   private flatMix = 0;
   private rhythm = new RhythmMotion();
+  private djCoverMotionTime = 0;
+  private djCoverMotionWallTime = performance.now() / 1000;
   private rhythmStyle: RhythmStyle = "legacy";
   setRhythmStyle(style: RhythmStyle) { this.rhythmStyle = style; }
   private relayLifts = new Map<string, number>();
@@ -241,7 +263,7 @@ export class ArchiveScene {
       if (this.djQueueView?.queue.length && view.queue.length) {
         this.djCoverTransition = {
           phase: "exit",
-          startedAt: performance.now() / 1000,
+          startedAt: this.djCoverMotionTime,
           targetView: view,
           startOffsets: this.captureDjCoverOffsets(),
         };
@@ -254,7 +276,7 @@ export class ArchiveScene {
     if (playlistChanged && canAnimate) {
       this.djCoverTransition = {
         phase: "exit",
-        startedAt: performance.now() / 1000,
+        startedAt: this.djCoverMotionTime,
         targetView: view!,
         startOffsets: this.captureDjCoverOffsets(),
       };
@@ -268,7 +290,7 @@ export class ArchiveScene {
     if (direction && canAnimate) {
       this.djCoverTransition = {
         phase: "slide",
-        startedAt: performance.now() / 1000,
+        startedAt: this.djCoverMotionTime,
         sourceView: this.djQueueView!,
         targetView: view!,
         direction,
@@ -475,6 +497,11 @@ export class ArchiveScene {
   }
   private updateDjCoverCards(field: (row: number, lane: number) => number, hoverLift: (cell: ArchiveCell) => number,
     trackX: number, entryZ: number, detail: number, showCovers: boolean, showTrackDetailCover = false) {
+    const wallTime = performance.now() / 1000;
+    const drawerOpen = this.container.closest<HTMLElement>("#stage")?.dataset.djDrawerOpen === "true";
+    const motionPaused = drawerOpen || !showCovers;
+    if (!motionPaused) this.djCoverMotionTime += Math.max(0, Math.min(wallTime - this.djCoverMotionWallTime, .1));
+    this.djCoverMotionWallTime = wallTime;
     let view = this.djQueueView;
     if (showTrackDetailCover && view?.queue[view.index]) {
       this.model.visible = false;
@@ -506,15 +533,10 @@ export class ArchiveScene {
     const enabled = showCovers && this.looping && this.presence > .05 && view && Boolean(view.queue[view.index]);
     this.model.visible = true;
     if (!enabled || !view) {
-      if (this.djCoverTransition) {
-        this.djQueueView = this.djCoverTransition.targetView;
-        this.djCoverTransition = null;
-        this.syncDjCoverSlots();
-      }
       for (const card of this.djCoverCards) card.visible = false;
       return;
     }
-    this.advanceDjCoverTransition(performance.now() / 1000);
+    this.advanceDjCoverTransition(this.djCoverMotionTime);
     view = this.djQueueView;
     if (!view) { for (const card of this.djCoverCards) card.visible = false; return; }
     if (this.djCoverTransition?.phase === "slide") {
@@ -523,7 +545,7 @@ export class ArchiveScene {
     }
     const anchorLane = this.selectedCell.lane;
     const anchorRow = this.selectedCell.row;
-    const now = performance.now() / 1000;
+    const now = this.djCoverMotionTime;
     this.djCoverSlots = djCoverSlots(view.queue.length, view.index, anchorLane, anchorRow);
     const tracksByRow = new Map(this.djCoverSlots.map(slot => [slot.row, view.queue[slot.trackIndex]]));
     const visibleRows = new Set(this.drawnCells.filter(cell => cell.lane === anchorLane).map(cell => cell.row));
@@ -580,7 +602,7 @@ export class ArchiveScene {
     visibleRows.add(anchorRow);
     const visibleSlots = djVisibleCoverSlots(sourceView.queue.length, sourceView.index, lane, anchorRow, [...visibleRows]);
     const coverRows = visibleSlots.map(({ slot }) => slot.row);
-    const progress = ease((performance.now() / 1000 - transition.startedAt) / DJ_COVER_SLIDE_DURATION);
+    const progress = ease((this.djCoverMotionTime - transition.startedAt) / DJ_COVER_SLIDE_DURATION);
     const rowShift = direction > 0 ? -1 : 1;
     const positionAt = (row: number) => {
       const cell = { lane, row };
@@ -698,7 +720,9 @@ export class ArchiveScene {
   private extraCoverage = false;
   setArchiveCoverage(extra: boolean) { this.extraCoverage = extra; }
   private model = new THREE.Group();
-  private appearance = new CardAppearance();
+  private songWhiteBalance = { value: 0 };
+  private songWhiteTarget = 0;
+  private appearance = new CardAppearance(this.songWhiteBalance);
   private decryption = new DecryptionController();
   private cursor = new THREE.Vector2();
   private raycaster = new THREE.Raycaster();
@@ -834,6 +858,7 @@ export class ArchiveScene {
     floor.position.y = -4.63;
     floor.receiveShadow = true;
     this.scene.add(floor);
+    this.songGapLight = new SongGapLight(this.scene);
     this.camera.position.set(-62.26, 35.98, 43.28);
     this.cameraAim.set(-0.5, 1.1, 0.4);
     this.camera.fov = 6.15;
@@ -858,6 +883,8 @@ export class ArchiveScene {
     this.composer.addPass(this.bokeh);
     this.smaa.enabled = false;
     this.composer.addPass(this.smaa);
+    this.songGapBloom.enabled = false;
+    this.composer.addPass(this.songGapBloom);
     this.composer.addPass(new OutputPass());
     this.bindPointer();
   }
@@ -993,7 +1020,7 @@ export class ArchiveScene {
       this.appearance.register(name, mat, arrayMat);
       this.themeAttribute ??= new THREE.InstancedBufferAttribute(new Float32Array(count), 1).setUsage(THREE.DynamicDrawUsage);
       geom.setAttribute("archiveTheme", this.themeAttribute);
-      themeMaterial(arrayMat, name, true, this.subduedIndex);
+      themeMaterial(arrayMat, name, true, this.subduedIndex, this.songWhiteBalance);
       const inst = new THREE.InstancedMesh(geom, arrayMat, count);
       // All surfaces move rigidly together; share the transform buffer on the GPU.
       inst.instanceMatrix = this.instances[0]?.instanceMatrix ?? inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -1954,7 +1981,12 @@ export class ArchiveScene {
     this.presence += Math.sign(this.presenceTarget - this.presence) * Math.min(step, Math.abs(this.presenceTarget - this.presence));
     this.renderer.domElement.style.opacity = String(THREE.MathUtils.clamp(this.presence / .16, 0, 1));
     this.theme.beginFrame();
-    themeEnvironment(this.scene, this.renderer, this.themeAmount);
+    this.songWhiteBalance.value = THREE.MathUtils.damp(this.songWhiteBalance.value, this.songWhiteTarget, this.reduced ? 30 : 3.4, dt);
+    this.songLighting.strength = THREE.MathUtils.damp(this.songLighting.strength, this.songLightTarget, this.reduced ? 30 : 4, dt);
+    if (Math.abs(this.songLighting.strength - this.songLightTarget) < .0001) this.songLighting.strength = this.songLightTarget;
+    this.songLighting.keyStrength = THREE.MathUtils.damp(this.songLighting.keyStrength, this.songKeyTarget, this.reduced ? 30 : 4, dt);
+    if (Math.abs(this.songLighting.keyStrength - this.songKeyTarget) < .0001) this.songLighting.keyStrength = this.songKeyTarget;
+    themeEnvironment(this.scene, this.renderer, this.themeAmount, this.songWhiteBalance.value, this.songLighting);
     const blend = 1 - Math.exp(-dt * (this.reduced ? 35 : 2.8));
     this.reveal = cinematic
       ? cinematic.reveal
@@ -2458,6 +2490,22 @@ export class ArchiveScene {
     const fixed = (Boolean(cinematic) || !this.looping) && !responsiveOpening;
     this.cells = fixed ? Array.from({ length: 160 }, (_, i) => poolCell(i))
       : this.visibility.update(this.camera, fog.far, trackX, entryZ + this.rail.value, this.extraCoverage);
+    // The marked seam is on the camera-facing edge of the spectrum lane,
+    // one lane further forward than the cover lane. Keep it in the gap,
+    // rather than painting a stripe on a file or a screen-space overlay.
+    const facing = this.camera.position.x >= this.cameraAim.x ? 1 : -1;
+    const seamLane = spectrumLane + facing * .5;
+    const seamRows = this.cells.filter(cell => cell.lane === spectrumLane).map(cell => cell.row);
+    const firstSeamRow = seamRows.length ? Math.min(...seamRows) - .5 : selectedRow - 16;
+    const lastSeamRow = seamRows.length ? Math.max(...seamRows) + .5 : selectedRow + 16;
+    this.songGapLight.update(dt,
+      isDjPrototype && this.djQueueView?.queue[this.djQueueView.index] && !cinematic
+        ? this.presence * (1 - ease(detail)) : 0,
+      (seamLane - 2) * COLUMN_SPACING - trackX, -.81,
+      (firstSeamRow - 15.5) * ROW_SPACING + entryZ + this.rail.value,
+      (lastSeamRow - 15.5) * ROW_SPACING + entryZ + this.rail.value, this.reduced,
+      progress => field(firstSeamRow + (lastSeamRow - firstSeamRow) * progress, spectrumLane + facing));
+    this.songGapBloom.enabled = this.songGapLight.group.visible;
     const hidden = new Set(this.outgoing.map(o => cellKey(o.cell)));
     hidden.add(cellKey(this.selectedCell));
     const coverCells = new Set(showDjCovers && this.looping && this.presence > .05 && this.djQueueView
@@ -2551,10 +2599,14 @@ export class ArchiveScene {
       state.begin();
       state.floats(...this.camera.projectionMatrix.elements, ...this.camera.matrixWorldInverse.elements,
         ...this.camera.position.toArray(),
-        fog.near, fog.far, this.themeAmount, this.subduedIndex.value,
+        fog.near, fog.far, this.themeAmount, this.subduedIndex.value, this.songWhiteBalance.value,
         bokehUniforms.focus.value, bokehUniforms.aperture.value);
       this.scene.traverse(object => {
         state.add(object.id, Number(object.visible));
+        if (object instanceof THREE.Light) {
+          state.floats(object.color.r, object.color.g, object.color.b, object.intensity, ...object.matrixWorld.elements);
+          if (object instanceof THREE.HemisphereLight) state.floats(object.groundColor.r, object.groundColor.g, object.groundColor.b);
+        }
         if (!(object instanceof THREE.Mesh)) return;
         object.modelViewMatrix.multiplyMatrices(this.camera.matrixWorldInverse, object.matrixWorld);
         object.normalMatrix.getNormalMatrix(object.modelViewMatrix);
@@ -2562,7 +2614,7 @@ export class ArchiveScene {
         const mat = object.material as THREE.MeshPhysicalMaterial;
         // Three increments material.version for its own double-sided transmission
         // passes. Track application-controlled inputs, not that render-side counter.
-        state.add(object.geometry.id, mat.uuid, mat.map?.uuid, mat.map?.version ?? 0);
+        state.add(object.geometry.id, object.geometry.attributes.position?.version ?? 0, mat.uuid, mat.map?.uuid, mat.map?.version ?? 0);
         state.floats(
           mat.opacity, mat.roughness, mat.metalness, mat.transmission, mat.thickness,
           mat.attenuationDistance, mat.clearcoat, mat.clearcoatRoughness,
@@ -2614,6 +2666,8 @@ export class ArchiveScene {
         .map((v) => Math.round(v * 10000) / 10000),
       fieldOfView: this.camera.fov,
       loaded: this.loaded,
+      songAmbient: { strength: this.songLighting.strength, rgb: this.songLighting.color.getHexString(), keyStrength: this.songLighting.keyStrength, keyRgb: this.songLighting.keyColor.getHexString() },
+      songGapLight: this.songGapLight.getStats(),
       drawCalls: this.renderer.info.render.calls,
       renderedFrames: this.renderedFrames,
       reusedFrames: this.reusedFrames,

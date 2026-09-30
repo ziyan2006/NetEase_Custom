@@ -46,6 +46,16 @@ test("player uses one media element and previous/next replace the queue track", 
   assert.deepEqual(requested, ["track-2", "track-3", "track-1", "track-3"]);
 });
 
+test("reselecting the same playlist starts a new queue transition, while track steps do not", async () => {
+  const player = new DjPlayer({ audio: new MockAudio(), resolveAudioUrl: async id => `https://audio/${id}.mp3` });
+  await player.setQueue(tracks, 0, false);
+  const firstRevision = player.getState().queueRevision;
+  await player.next();
+  assert.equal(player.getState().queueRevision, firstRevision);
+  await player.setQueue(tracks, 0, false);
+  assert.equal(player.getState().queueRevision, firstRevision + 1);
+});
+
 test("player reports unavailable sources and media errors instead of claiming playback", async () => {
   const audio = new MockAudio();
   const states = [];

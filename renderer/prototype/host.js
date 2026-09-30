@@ -1,11 +1,17 @@
 // Local DJ visual prototype: feed the original wallpaper host bridge with
 // sample operator data. No YesMusic API or audio playback is connected here.
+function savedColorTheme() {
+  try {
+    const theme = JSON.parse(localStorage.getItem("rhine-settings") || "null")?.colorTheme;
+    return theme === "light" || theme === "dark" || theme === "song" ? theme : "light";
+  } catch { return "light"; }
+}
 window.wallpaperPropertyListener.applyUserProperties({
   desktopmode: { value: "workbench" },
   openingdetail: { value: "skip" },
   sessionname: { value: "YESMUSIC DJ" },
   language: { value: "zh-CN" },
-  colortheme: { value: "light" },
+  colortheme: { value: savedColorTheme() },
   sound: { value: false },
   music: { value: false },
   task1: { value: "整理今晚的 Setlist 草稿" },

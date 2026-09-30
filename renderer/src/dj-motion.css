@@ -160,15 +160,14 @@ html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled):is(:hover, :
 html[data-dj-prototype="true"] .wb-dj-progress input::-moz-range-thumb { transition: transform var(--dj-motion-fast) var(--dj-ease-arrive); }
 html[data-dj-prototype="true"] .wb-dj-progress input:not(:disabled):is(:hover, :focus-visible)::-moz-range-thumb { transform: scale(1.3); }
 html[data-dj-prototype="true"] .wb-dj-mode-toggle g {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: opacity var(--dj-motion-standard) var(--dj-ease-utility),
-    transform var(--dj-motion-standard) var(--dj-ease-arrive);
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: opacity 220ms var(--dj-ease-utility), transform 280ms var(--dj-ease-arrive);
 }
-html[data-dj-prototype="true"] .wb-dj-mode-toggle .wb-dj-icon-loop { opacity: 1; transform: rotate(0) scale(1); }
-html[data-dj-prototype="true"] .wb-dj-mode-toggle .wb-dj-icon-shuffle { opacity: 0; transform: rotate(-14deg) scale(.72); }
-html[data-dj-prototype="true"] .wb-dj-mode-toggle[data-mode="shuffle"] .wb-dj-icon-loop { opacity: 0; transform: rotate(14deg) scale(.72); }
-html[data-dj-prototype="true"] .wb-dj-mode-toggle[data-mode="shuffle"] .wb-dj-icon-shuffle { opacity: 1; transform: rotate(0) scale(1); }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle .wb-dj-icon-loop { opacity: 1; transform: translateY(0) scale(1); }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle .wb-dj-icon-shuffle { opacity: 0; transform: translateY(3px) scale(.9); }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle[data-mode="shuffle"] .wb-dj-icon-loop { opacity: 0; transform: translateY(-3px) scale(.9); }
+html[data-dj-prototype="true"] .wb-dj-mode-toggle[data-mode="shuffle"] .wb-dj-icon-shuffle { opacity: 1; transform: translateY(0) scale(1); }
 html[data-dj-prototype="true"] .wb-dj-player[data-playback="loading"] #dj-player-status::before,
 html[data-dj-prototype="true"] .wb-dj-player[data-playback="playing"] #dj-player-status::before {
   display: inline-block;

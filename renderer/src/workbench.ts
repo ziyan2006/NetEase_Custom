@@ -13,7 +13,7 @@ import "./workbench.css";
 import { defaultWorkbenchVisibility, applyVisibilityProperties, type WorkbenchVisibility, type WorkbenchElement } from "./workbench-visibility";
 
 type Media = { status?: { enabled?: boolean }; properties?: { title?: string; artist?: string; albumTitle?: string }; thumbnail?: { thumbnail?: string }; timeline?: { position?: number; duration?: number }; playing?: boolean };
-type DjPlayerState = { queue: NeteaseTrack[]; index: number; playbackMode: "loop" | "shuffle"; playbackQueue: NeteaseTrack[]; playbackIndex: number; stepDirection: -1 | 0 | 1; status: "idle" | "loading" | "playing" | "paused" | "error"; currentTime: number; duration: number; error: string; track: NeteaseTrack | null };
+type DjPlayerState = { queue: NeteaseTrack[]; index: number; queueRevision: number; playbackMode: "loop" | "shuffle"; playbackQueue: NeteaseTrack[]; playbackIndex: number; stepDirection: -1 | 0 | 1; status: "idle" | "loading" | "playing" | "paused" | "error"; currentTime: number; duration: number; error: string; track: NeteaseTrack | null };
 type DrawerMode = "agent" | "playlist" | "search";
 const drawerLanes: Record<DrawerMode, number> = { agent: 0, playlist: 1, search: 2 };
 declare global { interface Window { rhineWallpaperMedia?: Media; } }
@@ -54,9 +54,8 @@ export class Workbench {
   private detailRequestId = 0;
   private player: DjPlayer;
   private djSpectrum?: DjSpectrumAnalyzer;
-  private playerState: DjPlayerState = { queue: [], index: -1, playbackMode: "loop", playbackQueue: [], playbackIndex: -1, stepDirection: 0, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
+  private playerState: DjPlayerState = { queue: [], index: -1, queueRevision: 0, playbackMode: "loop", playbackQueue: [], playbackIndex: -1, stepDirection: 0, status: "idle", currentTime: 0, duration: 0, error: "", track: null };
   private djQueueView: { queue: NeteaseTrack[]; index: number; playlistRevision: number; direction: -1 | 0 | 1 } = { queue: [], index: -1, playlistRevision: 0, direction: 0 };
-  private playerQueueSignature = "";
   private djQueueRevision = 0;
   private renderedPlayerKey = "";
   private playerTrackId = "";
@@ -772,12 +771,9 @@ export class Workbench {
   private onPlayerState(state: DjPlayerState) {
     const previousTrackId = this.playerTrackId;
     const previousStatus = this.playerState.status;
-    const queueSignature = state.queue.length ? JSON.stringify(state.queue.map(track => [track.id, track.coverUrl])) : "";
-    const playlistChanged = Boolean(queueSignature && this.playerQueueSignature && queueSignature !== this.playerQueueSignature);
-    if (queueSignature !== this.playerQueueSignature) {
-      if (playlistChanged) this.djQueueRevision++;
-      this.playerQueueSignature = queueSignature;
-    }
+    const playlistChanged = Boolean(state.queue.length && this.playerState.queue.length &&
+      (state.queueRevision !== this.playerState.queueRevision || state.playbackMode !== this.playerState.playbackMode));
+    if (playlistChanged) this.djQueueRevision++;
     const queueChanged = state.playbackIndex !== this.djQueueView.index || state.playbackQueue.length !== this.djQueueView.queue.length ||
       state.playbackQueue.some((track, index) => track.id !== this.djQueueView.queue[index]?.id || track.coverUrl !== this.djQueueView.queue[index]?.coverUrl);
     const trackId = state.track?.id ?? "";
@@ -1345,7 +1341,17 @@ export class Workbench {
         <div class="wb-kicker">NOW PLAYING / PLAYER <span id="dj-player-status" role="status" aria-live="polite"></span></div>
         ${track ? `<button class="wb-dj-player-open" data-dj-action="track-detail" aria-label="打开 ${escapeHtml(track.title)} 的 3D 歌曲档案"><span class="wb-dj-player-cover">${track.coverUrl ? `<img src="${escapeHtml(track.coverUrl)}" alt="${escapeHtml(track.title)} 封面"/>` : `<i aria-hidden="true">♫</i>`}</span><span class="wb-dj-player-info"><small>NETEASE MUSIC / NOW PLAYING</small><strong>${escapeHtml(track.title)}</strong><span>${escapeHtml(track.artists.join(" / ") || "未知艺人")} · ${escapeHtml(track.album)}</span><i class="wb-dj-open-hint">打开歌曲 3D 档案 ↗</i></span></button>` : `<div class="wb-playlist-empty wb-player-empty"><strong>尚未选择曲目</strong><small>从云端歌单或在线搜索中选择歌曲后，播放器会显示真实封面与播放进度。</small></div>`}
         <div class="wb-dj-progress"><input id="dj-player-seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="歌曲播放进度" disabled/><div><span id="dj-player-current">00:00</span><span id="dj-player-duration">00:00</span></div></div>
-        <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport"><button data-dj-action="player-previous" ${track ? "" : "disabled"} aria-label="上一首">⏮</button><button class="wb-dj-play-toggle" data-dj-action="player-toggle" ${track ? "" : "disabled"} aria-label="播放">▶</button><button data-dj-action="player-next" ${track ? "" : "disabled"} aria-label="下一首">⏭</button><button class="wb-dj-mode-toggle" data-dj-action="player-mode-toggle" data-mode="loop" ${track ? "" : "disabled"} aria-label="顺序循环播放，点击切换随机播放" title="顺序循环播放 · 点击切换随机播放" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="wb-dj-icon-loop" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5h10a3 3 0 0 1 3 3v1"/><path d="m18 3 3 3-3 3"/><path d="M16 19H6a3 3 0 0 1-3-3v-1"/><path d="m6 21-3-3 3-3"/></g><g class="wb-dj-icon-shuffle" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m4 7 2-2a3 3 0 0 1 4.2 0l7.6 7.6a3 3 0 0 0 4.2 0l1-1"/><path d="M18 4h3v3"/><path d="m4 17 2 2a3 3 0 0 0 4.2 0l1.2-1.2"/><path d="M18 20h3v-3"/><path d="m4 7 16 12"/></g></svg></button></div></div>
+        <div class="wb-dj-player-foot"><span>PLAYBACK CONTROLS</span><div class="wb-dj-transport">
+          <button data-dj-action="player-previous" ${track ? "" : "disabled"} aria-label="上一首">⏮</button>
+          <button class="wb-dj-play-toggle" data-dj-action="player-toggle" ${track ? "" : "disabled"} aria-label="播放">▶</button>
+          <button data-dj-action="player-next" ${track ? "" : "disabled"} aria-label="下一首">⏭</button>
+          <button class="wb-dj-mode-toggle" data-dj-action="player-mode-toggle" data-mode="loop" ${track ? "" : "disabled"} aria-label="顺序循环播放，点击切换随机播放" title="顺序循环播放 · 点击切换随机播放" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="square" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <g class="wb-dj-icon-loop"><path d="M4.5 10V8.5A2.5 2.5 0 0 1 7 6h12.5M16.5 3l3 3-3 3M19.5 14v1.5A2.5 2.5 0 0 1 17 18H4.5M7.5 15l-3 3 3 3"/></g>
+              <g class="wb-dj-icon-shuffle"><path d="M4 6.5h3l10 11h3M4 17.5h3l3.2-3.52M13.8 10.02 17 6.5h3M17 3.5l3 3-3 3M17 14.5l3 3-3 3"/></g>
+            </svg>
+          </button>
+        </div></div>
         <div class="wb-dj-player-actions">${actions}</div>
         ${this.playerPickerOpen && this.pendingTrack ? this.renderTrackAddConfirmation(true) : ""}
         <p id="dj-player-error" class="wb-muted wb-dj-player-notice" role="status" hidden></p>`;

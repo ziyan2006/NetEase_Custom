@@ -384,6 +384,10 @@
           {
             "label": "ui_colortheme_1",
             "value": "dark"
+          },
+          {
+            "label": "ui_colortheme_2",
+            "value": "song"
           }
         ]
       },
@@ -945,6 +949,7 @@
         "ui_colortheme": "Color theme",
         "ui_colortheme_0": "Light · Frosted white",
         "ui_colortheme_1": "Dark · Graphite",
+        "ui_colortheme_2": "Follow current song",
         "ui_autotheme": "Schedule light/dark theme (overrides manual changes at the next scheduled time)",
         "ui_darkstarthour": "Switch to dark · Hour (0–23)",
         "ui_darkstartminute": "Switch to dark · Minute",
@@ -1075,6 +1080,7 @@
         "ui_colortheme": "界面配色",
         "ui_colortheme_0": "亮色 · 磨砂白",
         "ui_colortheme_1": "暗色 · 石墨灰",
+        "ui_colortheme_2": "跟随当前歌曲",
         "ui_autotheme": "按时间自动切换明暗（手动切换会在下一个时间点被覆盖）",
         "ui_darkstarthour": "切换为暗色 · 时（0-23）",
         "ui_darkstartminute": "切换为暗色 · 分",

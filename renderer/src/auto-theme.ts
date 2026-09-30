@@ -1,7 +1,8 @@
 // Scheduled light/dark switching, configured from Wallpaper Engine properties.
 // The decision changes only when the schedule crosses a boundary, so a manual
 // choice made in between stays visible until the next configured time.
-export type ColorTheme = "light" | "dark";
+export type ColorTheme = "light" | "dark" | "song";
+export type ScheduledColorTheme = Exclude<ColorTheme, "song">;
 
 export type AutoThemeConfig = {
   enabled: boolean;
@@ -52,7 +53,7 @@ export function autoThemeSchedule(config: AutoThemeConfig) {
  * The dark window may wrap past midnight; equal times mean "keep the manual
  * choice" instead of an ambiguous zero-length window.
  */
-export function autoThemeTarget(config: AutoThemeConfig, date: Date): ColorTheme | null {
+export function autoThemeTarget(config: AutoThemeConfig, date: Date): ScheduledColorTheme | null {
   if (!config.enabled) return null;
   const darkStart = config.darkHour * 60 + config.darkMinute;
   const lightStart = config.lightHour * 60 + config.lightMinute;

@@ -5,6 +5,7 @@ export type DjPlaybackMode = "loop" | "shuffle";
 export type DjPlayerState = {
   queue: NeteaseTrack[];
   index: number;
+  queueRevision: number;
   playbackMode: DjPlaybackMode;
   playbackQueue: NeteaseTrack[];
   playbackIndex: number;

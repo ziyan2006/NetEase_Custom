@@ -47,7 +47,8 @@ import { createPlaylistExportState, failPlaylistExport, reducePlaylistExportEven
 let workbench: Workbench | undefined;
 import { ArchivePlayground } from "./archive-playground";
 import { ARRAY_OPENING_END, openingShowsDetail } from "./wallpaper-opening";
-import { paintTheme, themeSettingsMarkup } from "./theme-ui";
+import { paintTheme, setThemeMode, themeSettingsMarkup } from "./theme-ui";
+import { readSongCoverPalette, songPaletteAmbientLight, songPaletteUsesDarkSurface, type SongColorPalette } from "./song-color.js";
 import { sessionName, setSessionName } from "./session";
 import {
   autoThemeFromProperties,
@@ -84,7 +85,7 @@ $("#stage").innerHTML = `
     <button data-action="search"><span class="nav-glyph">⌕</span> ARCHIVE INDEX <span class="key">/</span></button>
     <button data-action="saved" aria-label="查看收藏档案" title="收藏档案">＋ SAVED <span id="saved-count">00</span></button>
     ${isDjPrototype ? '<button class="dj-account-button" data-action="dj-account" aria-label="登录网易云账号"><span class="dj-account-dot" aria-hidden="true"></span>网易云账号 · 未登录 <span>↗</span></button>' : ""}
-    ${!isWallpaper ? `<button class="settings-button" data-action="settings" aria-label="系统设置" title="系统设置"><span class="settings-glyph" aria-hidden="true">◷</span><span class="settings-label">设置</span></button>` : ""}
+    ${!isWallpaper || isDjPrototype ? `<button class="settings-button" data-action="settings" aria-label="系统设置" title="系统设置"><span class="settings-glyph" aria-hidden="true">◷</span><span class="settings-label">设置</span></button>` : ""}
   </nav>
   <button id="skip" class="skip" data-action="skip">ENTER SYSTEM <span>↗</span></button>
   <section id="boot" class="boot" aria-label="系统启动">
@@ -182,8 +183,8 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 const saved = new Set<string>(readLocal<string[]>("rhine-saved", []));
-const storedPrefs = readLocal<Partial<{ sound: boolean; music: boolean; soundVolume: number; musicVolume: number; reduced: boolean; quality: boolean; rendering: RenderQuality; colorTheme: "light" | "dark" }>>("rhine-settings", {});
-const prefs = {
+const storedPrefs = readLocal<Partial<{ sound: boolean; music: boolean; soundVolume: number; musicVolume: number; reduced: boolean; quality: boolean; rendering: RenderQuality; colorTheme: ColorTheme }>>("rhine-settings", {});
+const prefs: { sound: boolean; music: boolean; soundVolume: number; musicVolume: number; reduced: boolean; quality: boolean; rendering: RenderQuality; colorTheme: ColorTheme } = {
   sound: true,
   music: storedPrefs.sound ?? true,
   soundVolume: .55,
@@ -192,9 +193,94 @@ const prefs = {
   quality: true,
   ...storedPrefs,
   rendering: normalizeQuality(storedPrefs.rendering, storedPrefs.quality !== false),
-  colorTheme: storedPrefs.colorTheme === "dark" ? "dark" : "light",
+  colorTheme: storedPrefs.colorTheme === "dark" || storedPrefs.colorTheme === "song" ? storedPrefs.colorTheme : "light",
 };
 paintTheme(prefs.colorTheme === "dark" ? 1 : 0);
+setThemeMode(prefs.colorTheme);
+let songPalette: SongColorPalette = {
+  primary: [178, 137, 98],
+  secondary: [207, 197, 181],
+  primaryShare: .7,
+  secondaryShare: .3,
+};
+let songPaletteFrame = 0;
+let songAmbientLight = songPaletteAmbientLight(songPalette);
+let songTrackKey = "";
+let songThemeRequest = 0;
+let songPaletteDark = false;
+let songPaletteReady = false;
+let songWhiteTarget = 0;
+function effectiveThemeDark() {
+  return prefs.colorTheme === "dark" || (prefs.colorTheme === "song" && songPaletteReady && songPaletteDark);
+}
+function effectiveSongWhiteBalance() {
+  return prefs.colorTheme === "song" && songPaletteReady && !songPaletteDark ? songWhiteTarget : 0;
+}
+function syncSongThemeSurface() {
+  if (prefs.colorTheme !== "song") return;
+  scene?.setTheme(effectiveThemeDark(), prefs.reduced || !started);
+  scene?.setSongWhiteBalance(effectiveSongWhiteBalance(), prefs.reduced || !started);
+  if (!scene) paintTheme(effectiveThemeDark() ? 1 : 0);
+}
+function applySongPalette(palette: SongColorPalette) {
+  songAmbientLight = songPaletteAmbientLight(palette);
+}
+function transitionSongPalette(target: SongColorPalette) {
+  if (songPaletteFrame) cancelAnimationFrame(songPaletteFrame);
+  if (prefs.reduced) {
+    songPalette = target;
+    applySongPalette(songPalette);
+    return;
+  }
+  const from = songPalette;
+  const start = performance.now();
+  const tick = (now: number) => {
+    const progress = Math.min(1, (now - start) / 1100);
+    const eased = progress * progress * (3 - 2 * progress);
+    songPalette = {
+      primary: from.primary.map((value, index) => Math.round(value + (target.primary[index] - value) * eased)) as SongColorPalette["primary"],
+      secondary: from.secondary.map((value, index) => Math.round(value + (target.secondary[index] - value) * eased)) as SongColorPalette["secondary"],
+      primaryShare: from.primaryShare + (target.primaryShare - from.primaryShare) * eased,
+      secondaryShare: from.secondaryShare + (target.secondaryShare - from.secondaryShare) * eased,
+    };
+    applySongPalette(songPalette);
+    if (progress < 1) songPaletteFrame = requestAnimationFrame(tick);
+    else songPaletteFrame = 0;
+  };
+  songPaletteFrame = requestAnimationFrame(tick);
+}
+function setSongThemeTrack(track: { id: string; coverUrl: string | null } | null) {
+  const coverUrl = track?.coverUrl ?? "";
+  const key = track ? `${track.id}:${coverUrl}` : "";
+  if (key === songTrackKey) return;
+  songTrackKey = key;
+  const request = ++songThemeRequest;
+  if (!coverUrl) {
+    delete $("#stage").dataset.songThemeReady;
+    songPaletteReady = songPaletteDark = false;
+    songWhiteTarget = 0;
+    syncSongThemeSurface();
+    return;
+  }
+  void readSongCoverPalette(coverUrl).then(palette => {
+    if (request !== songThemeRequest) return;
+    if (palette === null) {
+      delete $("#stage").dataset.songThemeReady;
+      songPaletteReady = songPaletteDark = false;
+      songWhiteTarget = 0;
+      syncSongThemeSurface();
+      return;
+    }
+    $("#stage").dataset.songThemeReady = "true";
+    songPaletteReady = true;
+    songPaletteDark = songPaletteUsesDarkSurface(palette);
+    // Colored light needs a neutral receiver; ivory plus blue makes gray-green.
+    songWhiteTarget = songPaletteDark ? 0 : 1;
+    syncSongThemeSurface();
+    transitionSongPalette(palette);
+  });
+}
+applySongPalette(songPalette);
 const rollingMotion = {
   duration: 460,
   motionBlur: true,
@@ -340,8 +426,10 @@ function savePrefs() {
     bookmarkFeedback?.cancel();
   }
   scene?.setReduced(prefs.reduced);
-  scene?.setTheme(prefs.colorTheme === "dark", prefs.reduced || !started);
-  document.querySelectorAll<HTMLElement>("[data-color-theme]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.colorTheme === prefs.colorTheme)));
+  scene?.setTheme(effectiveThemeDark(), prefs.reduced || !started);
+  scene?.setSongWhiteBalance(effectiveSongWhiteBalance(), prefs.reduced || !started);
+  setThemeMode(prefs.colorTheme);
+  document.querySelectorAll<HTMLButtonElement>("button[data-color-theme]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.colorTheme === prefs.colorTheme)));
   scene?.setSuperPerformance(superPerformanceEnabled());
   viewer?.setSuperPerformance(superPerformanceEnabled());
   scene?.setQuality(effectiveRenderQuality());
@@ -689,7 +777,7 @@ function notify(message: string) {
 }
 
 function openModal(kind: NonNullable<typeof modal>) {
-  if (isWallpaper && kind === "settings") return;
+  if (isWallpaper && !isDjPrototype && kind === "settings") return;
   if (!ready) return;
   if (!modal) {
     previousFocus = document.activeElement as HTMLElement;
@@ -956,7 +1044,7 @@ function motionSettingsMarkup() {
     : "当前使用完整动效。"}</p>${prefs.reduced ? '<button data-action="enable-motion">启用完整动效并重播 ↻</button>' : ""}</div>`;
 }
 function settingsMarkup() {
-  return `<h2>SYSTEM SETTINGS<small>终端偏好设置</small></h2><p class="settings-intro"><span id="settings-intro-name">${escapeHtml(sessionName())}</span> <span>·</span> SESSION AUTHORIZED</p>${isWallpaper ? '<p class="wallpaper-settings-note">每次启动都会读取 Wallpaper Engine 中的设置。在此修改仅对当前运行生效，无法持久保存；如需保留，请在 Wallpaper Engine 的壁纸属性中调整。</p>' : ""}<div class="settings-list">${themeSettingsMarkup(prefs.colorTheme === "dark", autoThemeEnabled() ? autoThemeSchedule(autoTheme) : null)}${audioSettingsMarkup(prefs)}<label><div><strong>REDUCED MOTION</strong><span>跳过开机动画，简化选档、镜头和文字动效</span></div><input type="checkbox" data-pref="reduced" ${prefs.reduced ? "checked" : ""}/><i class="toggle"></i></label></div>${motionSettingsMarkup()}${qualityMarkup(prefs.rendering)}${pwaSettingsMarkup()}<div class="settings-shortcuts">${isWallpaper ? '<span>DESKTOP CONTROLS</span><p>拖动阵列或点击界面按钮浏览档案。桌面模式下，方向键与滚轮可能无法传入壁纸。</p>' : '<span>KEYBOARD CONTROLS</span><p><kbd>←</kbd><kbd>→</kbd> 切列 <kbd>↑</kbd><kbd>↓</kbd> 选档 <kbd>ENTER</kbd> 读取 <kbd>/</kbd> 检索 <kbd>ESC</kbd> 返回</p>'}</div><div class="settings-bottom">${!isWallpaper && document.fullscreenEnabled ? '<button data-action="fullscreen">FULLSCREEN <span>↗</span></button>' : ''}<button data-action="restart">REINITIALIZE SYSTEM <span>↻</span></button></div><div class="modal-bottom"><span>ANALYSIS OS / 1.0 · 使用 MiSans 字体（小米） <a href="${assetUrl("fonts/MiSans-license.pdf")}" target="_blank" rel="noopener">字体许可</a></span><span>POWERED BY RHINE LAB</span></div>`;
+  return `<h2>SYSTEM SETTINGS<small>终端偏好设置</small></h2><p class="settings-intro"><span id="settings-intro-name">${escapeHtml(sessionName())}</span> <span>·</span> SESSION AUTHORIZED</p>${isWallpaper ? '<p class="wallpaper-settings-note">每次启动都会读取 Wallpaper Engine 中的设置。在此修改仅对当前运行生效；如需持久调整，也可在 Wallpaper Engine 的壁纸属性中设置。</p>' : ""}<div class="settings-list">${themeSettingsMarkup(prefs.colorTheme, autoThemeEnabled() ? autoThemeSchedule(autoTheme) : null)}${audioSettingsMarkup(prefs)}<label><div><strong>REDUCED MOTION</strong><span>跳过开机动画，简化选档、镜头和文字动效</span></div><input type="checkbox" data-pref="reduced" ${prefs.reduced ? "checked" : ""}/><i class="toggle"></i></label></div>${motionSettingsMarkup()}${qualityMarkup(prefs.rendering)}${pwaSettingsMarkup()}<div class="settings-shortcuts">${isWallpaper ? '<span>DESKTOP CONTROLS</span><p>拖动阵列或点击界面按钮浏览档案。桌面模式下，方向键与滚轮可能无法传入壁纸。</p>' : '<span>KEYBOARD CONTROLS</span><p><kbd>←</kbd><kbd>→</kbd> 切列 <kbd>↑</kbd><kbd>↓</kbd> 选档 <kbd>ENTER</kbd> 读取 <kbd>/</kbd> 检索 <kbd>ESC</kbd> 返回</p>'}</div><div class="settings-bottom">${!isWallpaper && document.fullscreenEnabled ? '<button data-action="fullscreen">FULLSCREEN <span>↗</span></button>' : ''}<button data-action="restart">REINITIALIZE SYSTEM <span>↻</span></button></div><div class="modal-bottom"><span>ANALYSIS OS / 1.0 · 使用 MiSans 字体（小米） <a href="${assetUrl("fonts/MiSans-license.pdf")}" target="_blank" rel="noopener">字体许可</a></span><span>POWERED BY RHINE LAB</span></div>`;
 }
 
 document.addEventListener("input", (e) => {
@@ -995,8 +1083,14 @@ document.addEventListener("change", (e) => {
   }
 });
 document.addEventListener("click", (e) => {
-  const themeButton = (e.target as Element).closest<HTMLElement>("[data-color-theme]");
-  if (themeButton) { prefs.colorTheme = themeButton.dataset.colorTheme === "dark" ? "dark" : "light"; savePrefs(); return; }
+  // The selected theme is stored on <html data-color-theme="…">. Match only
+  // the actual control so all other clicks continue through the action router.
+  const themeButton = (e.target as Element).closest<HTMLButtonElement>("button[data-color-theme]");
+  if (themeButton) {
+    const theme = themeButton.dataset.colorTheme;
+    if (theme === "light" || theme === "dark" || theme === "song") setColorTheme(theme);
+    return;
+  }
   if (!started) return;
   if (modalClosing) return;
   const el = (e.target as Element).closest<HTMLElement>("button");
@@ -1252,9 +1346,15 @@ function frame(ms: number) {
   if (document.hidden) { requestAnimationFrame(frame); return; }
   workbench?.tick();
   const time = ms / 1000;
-  const theme = scene?.themeAmount ?? (prefs.colorTheme === "dark" ? 1 : 0);
-  paintTheme(theme);
+  const theme = scene?.themeAmount ?? (effectiveThemeDark() ? 1 : 0);
+  const neutral = prefs.colorTheme === "song" && songPaletteReady && !songPaletteDark ? 1 : 0;
+  paintTheme(theme, neutral);
   viewer?.setTheme(theme);
+  viewer?.setSongWhiteBalance(neutral);
+  const ambient = prefs.colorTheme === "song" && songPaletteReady ? songAmbientLight : null;
+  scene?.setSongAmbientLight(ambient);
+  scene?.setSongGapColor(songPaletteReady ? songPalette.secondary : null);
+  viewer?.setSongAmbientLight(ambient);
   playground?.tick(time);
   scene?.setDjSpectrum(workbench?.getDjSpectrum() ?? null);
   scene?.setDjQueue(workbench?.getDjQueueView() ?? null);
@@ -1387,7 +1487,8 @@ async function toggleThree() {
     next.revealImmediately();
     scene = next;
     syncModelPrecision();
-    scene.setTheme(prefs.colorTheme === "dark", true);
+    scene.setTheme(effectiveThemeDark(), true);
+    scene.setSongWhiteBalance(effectiveSongWhiteBalance(), true);
     scene.setArchiveCoverage(wallpaperHost()?.properties.archivecoverage?.value === "extra");
     savePrefs();
     scene.setPresentationVisible(true, prefs.reduced);
@@ -1405,7 +1506,8 @@ async function start() {
     if (isWallpaper) await window.rhineWallpaperPropertiesReady;
     if (!isWallpaper || wallpaperHost()?.properties.load3donstartup?.value !== false) {
       scene = new ArchiveScene($("#three-scene"));
-      scene.setTheme(prefs.colorTheme === "dark", true);
+      scene.setTheme(effectiveThemeDark(), true);
+      scene.setSongWhiteBalance(effectiveSongWhiteBalance(), true);
       scene.setArchiveCoverage(wallpaperHost()?.properties.archivecoverage?.value === "extra");
     } else {
       threeState = "off";
@@ -1536,7 +1638,7 @@ if (isWallpaper) {
     setLanguage(properties.language?.value);
     if (properties.modelprecision) syncModelPrecision();
     const theme = properties.colortheme?.value;
-    if (theme === "light" || theme === "dark") prefs.colorTheme = theme;
+    if (theme === "light" || theme === "dark" || theme === "song") prefs.colorTheme = theme;
     setSessionName(merged.sessionname?.value);
     autoTheme = autoThemeFromProperties(merged);
     scene?.setArchiveCoverage(properties.archivecoverage?.value === "extra" || wallpaperHost()?.properties.archivecoverage?.value === "extra");
@@ -1594,6 +1696,7 @@ if (isWallpaper) {
     openFile();
   }, track => {
     if (!isDjPrototype) return;
+    setSongThemeTrack(track);
     setDjPreview(track ? { title: track.title, artist: track.artists.join(" / "), album: track.album, coverUrl: track.coverUrl } : null);
     const trackIndex = records.findIndex(record => record.en === "TRACK PREVIEW");
     if (trackIndex >= 0 && ready && !modal) select(trackIndex);

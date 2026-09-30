@@ -3,6 +3,7 @@ import { isDjPrototype } from "./wallpaper";
 import * as THREE from "three";
 import { disposeThreeTree } from "./three-resources";
 import { themeEnvironment } from "./theme-material";
+import type { SongAmbientLight } from "./song-color.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createArchiveLighting } from "./archive-lighting";
 import { damp } from "./motion";
@@ -33,6 +34,19 @@ export class ModelViewer {
   private unbindLocale?: () => void;
   private themeAmount = 0;
   setTheme(value: number) { this.themeAmount = value; }
+  private songWhiteBalance = 0;
+  setSongWhiteBalance(value: number) { this.songWhiteBalance = value; }
+  private songLighting = { color: new THREE.Color(), strength: 0, keyColor: new THREE.Color(), keyStrength: 0 };
+  private songLightTarget = 0;
+  private songKeyTarget = 0;
+  setSongAmbientLight(light: SongAmbientLight | null) {
+    this.songLightTarget = light?.strength ?? 0;
+    this.songKeyTarget = light?.keyStrength ?? 0;
+    if (light) {
+      this.songLighting.color.setRGB(...light.rgb.map(value => value / 255) as [number, number, number], THREE.SRGBColorSpace);
+      this.songLighting.keyColor.setRGB(...light.keyRgb.map(value => value / 255) as [number, number, number], THREE.SRGBColorSpace);
+    }
+  }
   refreshExportScreen() { this.source?.refreshExportScreen?.(); }
   readonly root: HTMLElement;
   private canvasHost: HTMLElement;
@@ -567,10 +581,14 @@ export class ModelViewer {
 
   update(time: number) {
     if (!this.isOpen) return;
-    themeEnvironment(this.scene, this.renderer, this.themeAmount);
     this.source?.model.traverse(child => { if (child.userData.themeAmount) child.userData.themeAmount.value = this.themeAmount; });
     const dt = Math.min(this.lastTime ? time - this.lastTime : 1 / 60, 0.05);
     this.lastTime = time;
+    this.songLighting.strength = THREE.MathUtils.damp(this.songLighting.strength, this.songLightTarget, this.reduced ? 30 : 4, dt);
+    if (Math.abs(this.songLighting.strength - this.songLightTarget) < .0001) this.songLighting.strength = this.songLightTarget;
+    this.songLighting.keyStrength = THREE.MathUtils.damp(this.songLighting.keyStrength, this.songKeyTarget, this.reduced ? 30 : 4, dt);
+    if (Math.abs(this.songLighting.keyStrength - this.songKeyTarget) < .0001) this.songLighting.keyStrength = this.songKeyTarget;
+    themeEnvironment(this.scene, this.renderer, this.themeAmount, this.songWhiteBalance, this.songLighting);
     if (this.source) {
       damp(this.clarity, this.targetClarity, 8, dt);
       if (Math.abs(this.clarity.value - this.targetClarity) < .0001 && Math.abs(this.clarity.velocity) < .001)
